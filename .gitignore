@@ -1,8 +1,34 @@
+# Dependencies
 node_modules/
+
+# Build output and installers (installers belong on the GitHub Releases page, not in git)
 dist/
 release/
-*.log
-# User data never lives in the project folder, but guard against accidents:
+*.tsbuildinfo
+coverage/
+
+# User data — the app stores it in %APPDATA%, but guard against copies landing here
 *.db
 *.db-wal
 *.db-shm
+*.db-journal
+backups/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Secrets and local environment
+.env
+.env.*
+
+# Personal Claude Code settings (the shared .claude/settings.json and hooks are committed)
+.claude/settings.local.json
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -2,7 +2,13 @@
 
 Windows desktop app for planning a university semester around a weekly timetable. Single user, offline, local SQLite database. Written in English; UI uses Monday-first weeks and 24-hour time.
 
-**Keep this file current.** After any change to code, scripts, tests or config, update the relevant sections here, bump the version and add a `CHANGELOG.md` entry. A Stop hook (`.claude/hooks/check-docs.mjs`, registered in `.claude/settings.json`) blocks finishing a turn when `CLAUDE.md` or `CHANGELOG.md` is older than the latest source change.
+**Keep this file current.** After any change to code, scripts, tests or config, update the relevant sections here, bump the version and add a `CHANGELOG.md` entry. A Stop hook (`.claude/hooks/check-docs.mjs`, registered in `.claude/settings.json`) blocks finishing a turn when `CLAUDE.md` or `CHANGELOG.md` is older than the latest change in `src/`, `scripts/`, `tests/` or the build configs, or when `CHANGELOG.md` has no `## <version>` entry for the version in `package.json`. Bump the version before writing the changelog entry.
+
+## Docs
+
+- `README.md` is the public GitHub landing page: user-facing, short, no internals (those belong here). Update it when a notable feature changes.
+- `docs/screenshots/*.png` are shown in the README (1440×900, dark theme, demo data). Retake them when the UI changes visibly.
+- `CHANGELOG.md` lists changes per version.
 
 ## Stack & commands
 
