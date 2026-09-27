@@ -1,0 +1,65 @@
+{
+  "name": "study-planner",
+  "productName": "Study Planner",
+  "version": "1.2.0",
+  "description": "Visual university study planner for Windows",
+  "author": "Silvan Meier",
+  "private": true,
+  "main": "dist/main/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build-main.mjs && vite build --config vite.config.mts",
+    "start": "npm run build && node scripts/launch.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "icon": "node scripts/launch.mjs scripts/make-icon.cjs",
+    "dist": "npm run typecheck && npm test && npm run build && electron-builder --win nsis && node scripts/clean-release.mjs"
+  },
+  "build": {
+    "appId": "ch.silvanmeier.studyplanner",
+    "productName": "Study Planner",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Study Planner",
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2",
+    "wait-on": "^9.1.0"
+  }
+}

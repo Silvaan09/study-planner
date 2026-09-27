@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-docs.mjs\"",
+            "timeout": 30,
+            "statusMessage": "Checking CLAUDE.md and CHANGELOG are up to date"
+          }
+        ]
+      }
+    ]
+  }
+}

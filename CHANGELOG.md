@@ -1,0 +1,27 @@
+# Changelog
+
+Versions follow [semantic versioning](https://semver.org): **major** for changes you have to act on yourself or that remove features, **minor** for new features and visible UI changes (including automatic database migrations), **patch** for bug fixes and small tweaks.
+
+## 1.2.0 — 2026-09-27
+- Exercises can be planned on several days. In the exercise dialog, add or remove days, or use "Every <weekday> until the deadline". For recurring exercises the pattern repeats in every occurrence (e.g. due every second Friday, planned every Thursday).
+- The timetable shows the exercise on each planned day ("Session 1 of 2"). Dragging a card moves only that session; dropping it on a day that is already planned combines the two.
+- Series edits apply a changed planned-days pattern to each affected occurrence at the same place in its cycle.
+- The Outstanding list shows all planned days of an exercise.
+- Database schema v2 (new table `exercise_plan_dates`). Existing exercises keep their planned date; a backup is made automatically before the upgrade. After updating, older app versions can no longer open the database.
+
+## 1.1.1 — 2026-09-27
+- Outstanding: the "open exercises" count only includes exercises planned for today or earlier, or due within the next 7 days. The list itself still shows every uncompleted exercise.
+- Build: `npm run dist` removes installers of older versions from `release/` after a successful build.
+
+## 1.1.0 — 2026-09-27
+- Dark theme throughout, including the window title bar and dropdowns.
+- Exercise and deadline cards in the timetable show the subject name.
+- Long titles wrap instead of being cut off. Days with lectures side by side get extra width, and hovering a lecture shows all its text.
+- Lecture cards are top-aligned, with the completion check mark in the top-right corner.
+- Day columns line up exactly between the header, the exercise rows and the lecture grid; the header stays pinned while scrolling.
+- Saturday and Sunday share a weekend tint. Today is marked in the header instead of tinting the whole column.
+- Removed the "Not completed" label from lectures.
+- The timetable shows the hours up to 20:00 (grid runs until 21:00) by default.
+
+## 1.0.0 — 2026-09-27
+- First release: semesters, subjects, weekly lectures with per-week completion, exercises with planned dates and deadlines, recurring exercise series with per-occurrence edits, outstanding list, trash, local SQLite database with migrations and automatic backups.
