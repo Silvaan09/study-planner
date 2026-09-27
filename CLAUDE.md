@@ -83,5 +83,6 @@ Trash: rows get `deleted_at` + `trash_batch_id` (one batch per user action, list
 - One scroll container (`.tt-scroll`) with a sticky block (header + "To do" + "Due" rows) so day columns align exactly.
 - Day column widths come from `--days`: weight 1, 1.6 (two lectures side by side), 2.2 (three+), 0.7 for completely empty days.
 - Lecture cards: top-aligned, check mark floated top right, text wraps (no mid-word breaks); hover expands a card to show all text. Past uncompleted lectures get a subtle amber outline (`.missed`).
+- Deadline cards ("Due" row): the flag/check icon (`.due-check`) toggles completed ↔ in progress; the rest of the card opens the editor. Planned cards: the status circle cycles the three statuses.
 - Saturday/Sunday share `--weekend` tint; today is marked only in the header.
 - Before finishing UI work: `npm run typecheck && npm test`, then check visually (build + launch).

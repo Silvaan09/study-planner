@@ -657,6 +657,25 @@ textarea.input {
   flex: none;
   margin-top: 2px;
 }
+/* Flag on a deadline card: checks the exercise off. */
+.due-check {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin: -1px 0 0 -3px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.due-check:hover {
+  background: color-mix(in srgb, var(--success) 25%, transparent);
+  color: var(--success);
+}
 .ex-text {
   display: flex;
   flex-direction: column;
