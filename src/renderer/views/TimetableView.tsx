@@ -153,6 +153,18 @@ export function TimetableView({
 
   const toggleLecture = (o: LectureOccurrence) => ui.run(() => api.setLectureCompleted(o.lectureId, o.weekStart, !o.completed));
   const cycleStatus = (e: Exercise) => ui.run(() => api.setExerciseStatus(e.id, NEXT_STATUS[e.status]));
+  /** Flag on a deadline card: check the exercise off, or reopen it (as "In progress") if it's already completed. */
+  const toggleDone = (e: Exercise) =>
+    ui.run(async () => {
+      const next: ExerciseStatus = e.status === 'completed' ? 'in_progress' : 'completed';
+      await api.setExerciseStatus(e.id, next);
+      if (next === 'completed') {
+        ui.toast(`"${e.title}" completed`, {
+          kind: 'success',
+          action: { label: 'Undo', run: () => void ui.run(() => api.setExerciseStatus(e.id, e.status)) },
+        });
+      }
+    });
 
   const lectureMenu = (ev: React.MouseEvent, o: LectureOccurrence) => {
     ev.preventDefault();
@@ -442,20 +454,32 @@ export function TimetableView({
                 {list.map((e) => {
                   const overdue = e.status !== 'completed' && d < today;
                   return (
-                    <button
+                    <div
                       key={e.id}
+                      role="button"
+                      tabIndex={0}
                       className={`ex-chip due status-${e.status} ${overdue ? 'overdue' : ''}`}
                       style={{ '--c': colorOf(e.subjectId) } as CSSProperties}
                       onClick={() => openExercise(e.id)}
+                      onKeyDown={(ev) => ev.key === 'Enter' && openExercise(e.id)}
                       onContextMenu={(ev) => exerciseMenu(ev, e)}
                       title={`Deadline: ${e.title} (${subjectName(e.subjectId)}) — ${EXERCISE_STATUS_LABEL[e.status]}\nPlanned for ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}`}
                     >
-                      {e.status === 'completed' ? <Check size={13} /> : <Flag size={13} />}
+                      <button
+                        className="due-check"
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          void toggleDone(e);
+                        }}
+                        title={e.status === 'completed' ? 'Completed — click to reopen' : 'Click to mark as completed'}
+                      >
+                        {e.status === 'completed' ? <Check size={13} /> : <Flag size={13} />}
+                      </button>
                       <span className="ex-text">
                         <span className="ex-subject">{subjectName(e.subjectId)}</span>
                         <span className="ex-title">{e.title}</span>
                       </span>
-                    </button>
+                    </div>
                   );
                 })}
               </div>

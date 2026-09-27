@@ -2,7 +2,8 @@
 
 Versions follow [semantic versioning](https://semver.org): **major** for changes you have to act on yourself or that remove features, **minor** for new features and visible UI changes (including automatic database migrations), **patch** for bug fixes and small tweaks.
 
-## Unreleased
+## 1.2.1 — 2026-09-28
+- Timetable: clicking the flag on a deadline card checks the exercise off (with Undo); clicking the check mark again reopens it as "In progress". Clicking elsewhere on the card still opens the editor.
 - Licensed under MIT (`LICENSE`).
 - README rewritten as a GitHub landing page with screenshots (`docs/screenshots/`); technical details live in CLAUDE.md.
 - `.gitignore` extended (local env files, personal Claude settings, editor/OS files, stray database backups).
