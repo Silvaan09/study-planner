@@ -2,6 +2,12 @@
 
 Versions follow [semantic versioning](https://semver.org): **major** for changes you have to act on yourself or that remove features, **minor** for new features and visible UI changes (including automatic database migrations), **patch** for bug fixes and small tweaks.
 
+## Unreleased
+- Licensed under MIT (`LICENSE`).
+- README rewritten as a GitHub landing page with screenshots (`docs/screenshots/`); technical details live in CLAUDE.md.
+- `.gitignore` extended (local env files, personal Claude settings, editor/OS files, stray database backups).
+- Claude docs hook: also checks that `CHANGELOG.md` has an entry for the current version (and no longer treats a version bump as outdated docs).
+
 ## 1.2.0 — 2026-09-27
 - Exercises can be planned on several days. In the exercise dialog, add or remove days, or use "Every <weekday> until the deadline". For recurring exercises the pattern repeats in every occurrence (e.g. due every second Friday, planned every Thursday).
 - The timetable shows the exercise on each planned day ("Session 1 of 2"). Dragging a card moves only that session; dropping it on a day that is already planned combines the two.

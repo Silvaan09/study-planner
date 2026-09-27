@@ -17,7 +17,9 @@ try {
 if (input.stop_hook_active) process.exit(0);
 
 const WATCHED_DIRS = ['src', 'scripts', 'tests'];
-const WATCHED_FILES = ['package.json', 'tsconfig.json', 'vite.config.mts', 'vitest.config.ts'];
+// package.json is not timestamp-checked (a version bump would always trip it); its version is
+// checked against CHANGELOG.md below instead.
+const WATCHED_FILES = ['tsconfig.json', 'vite.config.mts', 'vitest.config.ts'];
 
 function newest(p) {
   let st;
@@ -42,14 +44,27 @@ for (const rel of [...WATCHED_DIRS, ...WATCHED_FILES]) {
 }
 
 const stale = ['CLAUDE.md', 'CHANGELOG.md'].filter((doc) => newest(path.join(root, doc)).time < latest.time);
-if (stale.length === 0) process.exit(0);
 
-const changed = path.relative(root, latest.file);
+// The current version must have a CHANGELOG entry.
+let versionProblem = null;
+try {
+  const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const changelog = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
+  if (!changelog.includes(`## ${version}`)) versionProblem = `CHANGELOG.md has no "## ${version}" entry for the version in package.json`;
+} catch {
+  versionProblem = 'package.json or CHANGELOG.md could not be read';
+}
+
+if (stale.length === 0 && !versionProblem) process.exit(0);
+
+const problems = [];
+if (stale.length > 0) problems.push(`project files changed (latest: ${path.relative(root, latest.file)}) after ${stale.join(' and ')} was last updated`);
+if (versionProblem) problems.push(versionProblem);
 process.stdout.write(
   JSON.stringify({
     decision: 'block',
     reason:
-      `Project files changed (latest: ${changed}) after ${stale.join(' and ')} was last updated. Before finishing: ` +
+      `Docs check: ${problems.join('; ')}. Before finishing: ` +
       'update CLAUDE.md so its overview (structure, data model, commands, rules) matches the code; ' +
       'bump the version in package.json per the versioning policy in CLAUDE.md (npm version <x.y.z> --no-git-tag-version) ' +
       'and add a matching CHANGELOG.md entry. If a doc is already accurate, say so briefly.',
