@@ -1,6 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError } from './api';
 import { X } from './components/Icons';
+import { Celebration, CELEBRATION_MS } from './components/Celebration';
+import type { ISODate } from '../shared/dates';
+import type { CelebrationKind } from '../shared/progress';
 
 // ------------------------------------------------------------------ toasts
 
@@ -22,6 +25,8 @@ interface UiContext {
   dialog<T>(render: (close: (result?: T) => void) => ReactNode): Promise<T | undefined>;
   /** Runs a mutation: reports errors as toasts and refreshes views on success. */
   run<T>(fn: () => Promise<T>): Promise<T | undefined>;
+  /** Plays the confetti overlay for a week whose lectures and/or exercises were just all completed. */
+  celebrate(kind: CelebrationKind, weekStart: ISODate): void;
 }
 
 const Ctx = createContext<UiContext | null>(null);
@@ -36,6 +41,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
   const [dataVersion, setDataVersion] = useState(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dialogs, setDialogs] = useState<{ id: number; node: ReactNode }[]>([]);
+  const [celebration, setCelebration] = useState<{ id: number; kind: CelebrationKind; weekStart: ISODate } | null>(null);
   const nextId = useRef(1);
 
   const refresh = useCallback(() => setDataVersion((v) => v + 1), []);
@@ -73,12 +79,19 @@ export function UiProvider({ children }: { children: ReactNode }) {
     [refresh, toast],
   );
 
+  const celebrate = useCallback<UiContext['celebrate']>((kind, weekStart) => {
+    const id = nextId.current++;
+    setCelebration({ id, kind, weekStart });
+    setTimeout(() => setCelebration((c) => (c?.id === id ? null : c)), CELEBRATION_MS[kind]);
+  }, []);
+
   return (
-    <Ctx.Provider value={{ dataVersion, refresh, toast, dialog, run }}>
+    <Ctx.Provider value={{ dataVersion, refresh, toast, dialog, run, celebrate }}>
       {children}
       {dialogs.map((d) => (
         <div key={d.id}>{d.node}</div>
       ))}
+      {celebration && <Celebration key={celebration.id} kind={celebration.kind} weekStart={celebration.weekStart} />}
       <div className="toasts" role="status">
         {toasts.map((t) => (
           <div key={t.id} className={`toast toast-${t.kind}`}>

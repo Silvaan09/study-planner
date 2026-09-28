@@ -76,6 +76,20 @@ export interface Exercise {
   overrides: OverridableField[];
 }
 
+/** Completion counts of one week, as shown in the timetable header. */
+export interface WeekProgress {
+  lectures: number;
+  lecturesDone: number;
+  /** Exercises with at least one planned date in the week. */
+  exercises: number;
+  exercisesDone: number;
+  exercisesInProgress: number;
+}
+
+export interface SemesterWeekProgress extends WeekProgress {
+  weekStart: ISODate;
+}
+
 export interface WeekData {
   weekStart: ISODate;
   subjects: Subject[];
@@ -234,6 +248,8 @@ export interface StudyApi {
 
   getWeek(semesterId: Id, weekStart: ISODate): WeekData;
   getOutstanding(semesterId: Id, today: ISODate): Outstanding;
+  /** Progress of every week of the semester, in order (for the week picker). */
+  getSemesterProgress(semesterId: Id): SemesterWeekProgress[];
 
   listTrash(): TrashEntry[];
   restoreTrash(id: Id): void;

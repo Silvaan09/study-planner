@@ -11,6 +11,7 @@ import {
   weeksBetween,
   type ISODate,
 } from '../shared/dates';
+import { weekProgress } from '../shared/progress';
 import {
   EXERCISE_STATUSES,
   type DeleteResult,
@@ -37,6 +38,7 @@ import {
   type SubjectOverview,
   type TrashEntry,
   type TrashKind,
+  type SemesterWeekProgress,
   type WeekData,
 } from '../shared/types';
 
@@ -849,6 +851,11 @@ export class StudyService {
       exercises,
       series,
     };
+  }
+
+  getSemesterProgress(semesterId: Id): SemesterWeekProgress[] {
+    const sem = this.liveSemester(semesterId);
+    return weeksBetween(sem.startDate, sem.endDate).map((w) => ({ weekStart: w, ...weekProgress(this.getWeek(semesterId, w)) }));
   }
 
   getOutstanding(semesterId: Id, today: ISODate): Outstanding {

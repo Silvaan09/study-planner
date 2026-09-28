@@ -431,18 +431,82 @@ textarea.input {
   display: flex;
   gap: 6px;
 }
-.week-jump input[type='date'] {
-  width: 38px;
-  padding: 0 6px;
-  color: transparent;
+.date-jump {
+  position: relative;
+  display: inline-flex;
+}
+.date-jump input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+.week-picker {
+  position: relative;
+}
+.week-picker-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 142px;
+  cursor: pointer;
+  text-align: left;
+}
+.week-picker-btn span {
+  flex: 1;
+}
+.week-picker-btn svg {
+  color: var(--text-2);
+}
+.week-list {
+  position: absolute;
+  z-index: 200;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  animation: pop 0.1s ease-out;
+}
+.week-option {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 30px;
+  padding: 0 8px 0 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  white-space: nowrap;
   cursor: pointer;
 }
-.week-jump input[type='date']::-webkit-datetime-edit {
-  display: none;
+.week-option span:first-child {
+  flex: 1;
 }
-.week-jump input[type='date']::-webkit-calendar-picker-indicator {
-  cursor: pointer;
-  margin: 0;
+.week-option.active {
+  background: var(--surface-3);
+}
+.week-option.selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+.week-status {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+}
+.week-status.status-in_progress {
+  color: var(--accent);
+}
+.week-status.status-completed {
+  color: var(--success);
 }
 .week-stats {
   display: flex;
@@ -752,6 +816,8 @@ textarea.input {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /* The view sets its own scroll position per week; scroll anchoring would shift it when the sticky rows change height. */
+  overflow-anchor: none;
 }
 .tt-sticky {
   position: sticky;
@@ -1640,4 +1706,149 @@ textarea.input {
   flex-wrap: wrap;
   gap: 2px;
   margin-left: -8px;
+}
+
+/* ------------------------------------------------------------------ week celebration */
+.celebration {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  pointer-events: none;
+  overflow: hidden;
+}
+.celebration-card {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 18%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 22px 14px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  transform: translateX(-50%);
+  animation:
+    celebrate-in 0.5s cubic-bezier(0.2, 1.5, 0.4, 1) both,
+    celebrate-out 0.4s ease-in var(--stay) forwards;
+}
+.celebration-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--success-soft);
+  color: var(--success);
+}
+.celebration.everything .celebration-card {
+  padding: 18px 28px 18px 18px;
+  border-color: color-mix(in srgb, var(--success) 45%, var(--border-strong));
+}
+.celebration.everything .celebration-icon {
+  width: 52px;
+  height: 52px;
+  background: linear-gradient(135deg, var(--accent), var(--success));
+  color: var(--on-accent);
+}
+.celebration-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.celebration-text strong {
+  font-size: 17px;
+}
+.celebration.everything .celebration-text strong {
+  font-size: 20px;
+}
+.celebration-text small {
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+@keyframes celebrate-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-12px) scale(0.85);
+  }
+}
+@keyframes celebrate-out {
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px) scale(0.96);
+  }
+}
+
+.confetti {
+  position: absolute;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--c);
+  opacity: 0;
+  animation-fill-mode: forwards;
+}
+.confetti.shape-1 {
+  width: 5px;
+  height: 14px;
+}
+.confetti.shape-2 {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+/* Bursts out of the card, then falls. */
+.confetti.burst {
+  left: 50%;
+  top: calc(18% + 36px);
+  animation-name: confetti-burst;
+}
+@keyframes confetti-burst {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(0deg) scale(0.6);
+    animation-timing-function: cubic-bezier(0.1, 0.8, 0.3, 1);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) rotate(var(--rot)) scale(1);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--dx) * 1.2), calc(-50% + var(--dy) + 200px)) rotate(calc(var(--rot) * 2)) scale(1);
+  }
+}
+/* Whole-week celebration: confetti shower from the top of the window. */
+.confetti.rain {
+  left: var(--x);
+  top: -20px;
+  animation-name: confetti-fall;
+  animation-timing-function: linear;
+}
+@keyframes confetti-fall {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), 105vh) rotate(var(--rot));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .confetti {
+    display: none;
+  }
+  .celebration-card {
+    animation:
+      fade 0.3s ease-out both,
+      celebrate-out 0.4s ease-in var(--stay) forwards;
+  }
 }

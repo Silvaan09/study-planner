@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react';
 import { api } from '../api';
 import { useLoad, useUi } from '../ui';
-import { useActions } from '../actions';
+import { useActions, useWeekCompletion } from '../actions';
 import {
   addDays,
   diffDays,
@@ -18,10 +18,12 @@ import {
   WEEKDAY_SHORT,
   type ISODate,
 } from '../../shared/dates';
+import { exerciseWeeks, weekProgress } from '../../shared/progress';
 import { EXERCISE_STATUS_LABEL, type Exercise, type ExerciseStatus, type LectureOccurrence, type Semester } from '../../shared/types';
 import { ExerciseDialog, LectureDialog } from '../dialogs';
 import { ContextMenu, type MenuState } from '../components/ContextMenu';
-import { Check, ChevronLeft, ChevronRight, Flag, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
+import { WeekPicker } from '../components/WeekPicker';
+import { Calendar, Check, ChevronLeft, ChevronRight, Flag, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
 
 const HOUR_PX = 64;
 const NEXT_STATUS: Record<ExerciseStatus, ExerciseStatus> = { not_started: 'in_progress', in_progress: 'completed', completed: 'not_started' };
@@ -82,6 +84,7 @@ export function TimetableView({
 }) {
   const ui = useUi();
   const actions = useActions();
+  const completing = useWeekCompletion(semester.id);
   const now = useNow();
   const today = todayISO(now);
   const { data } = useLoad(() => api.getWeek(semester.id, weekStart), [semester.id, weekStart]);
@@ -90,6 +93,7 @@ export function TimetableView({
   const [dragging, setDragging] = useState<{ e: Exercise; from: ISODate } | null>(null);
   const [dropDay, setDropDay] = useState<ISODate | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
 
   const subjects = data?.subjects ?? [];
   const subjectById = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
@@ -151,13 +155,17 @@ export function TimetableView({
       />
     ));
 
-  const toggleLecture = (o: LectureOccurrence) => ui.run(() => api.setLectureCompleted(o.lectureId, o.weekStart, !o.completed));
-  const cycleStatus = (e: Exercise) => ui.run(() => api.setExerciseStatus(e.id, NEXT_STATUS[e.status]));
+  const toggleLecture = (o: LectureOccurrence) =>
+    ui.run(() => completing(o.completed ? [] : [o.weekStart], () => api.setLectureCompleted(o.lectureId, o.weekStart, !o.completed)));
+  /** Sets an exercise's status; completing it may finish off the weeks it is planned in. */
+  const setStatus = (e: Exercise, status: ExerciseStatus) =>
+    completing(status === 'completed' ? exerciseWeeks(e.plannedDates) : [], () => api.setExerciseStatus(e.id, status));
+  const cycleStatus = (e: Exercise) => ui.run(() => setStatus(e, NEXT_STATUS[e.status]));
   /** Flag on a deadline card: check the exercise off, or reopen it (as "In progress") if it's already completed. */
   const toggleDone = (e: Exercise) =>
     ui.run(async () => {
       const next: ExerciseStatus = e.status === 'completed' ? 'in_progress' : 'completed';
-      await api.setExerciseStatus(e.id, next);
+      await setStatus(e, next);
       if (next === 'completed') {
         ui.toast(`"${e.title}" completed`, {
           kind: 'success',
@@ -201,7 +209,7 @@ export function TimetableView({
           label: EXERCISE_STATUS_LABEL[s],
           icon: <StatusIcon status={s} size={14} />,
           disabled: e.status === s,
-          onSelect: () => ui.run(() => api.setExerciseStatus(e.id, s)),
+          onSelect: () => ui.run(() => setStatus(e, s)),
         })),
         'separator' as const,
         { label: 'Edit…', icon: <Pencil size={14} />, onSelect: () => openExercise(e.id) },
@@ -282,17 +290,10 @@ export function TimetableView({
   const colorOf = (subjectId: number) => subjectById.get(subjectId)?.color ?? '#888';
   const subjectName = (subjectId: number) => subjectById.get(subjectId)?.name ?? '';
 
-  const weekStats = useMemo(() => {
-    const lectures = data?.lectures ?? [];
-    const weekEnd = addDays(weekStart, 6);
-    const planned = (data?.exercises ?? []).filter((e) => e.plannedDates.some((p) => p >= weekStart && p <= weekEnd));
-    return {
-      lecturesDone: lectures.filter((l) => l.completed).length,
-      lectures: lectures.length,
-      exercisesDone: planned.filter((e) => e.status === 'completed').length,
-      exercises: planned.length,
-    };
-  }, [data, weekStart]);
+  const weekStats = useMemo(
+    () => (data ? weekProgress(data) : { lectures: 0, lecturesDone: 0, exercises: 0, exercisesDone: 0, exercisesInProgress: 0 }),
+    [data],
+  );
 
   return (
     <div className="timetable-view">
@@ -315,26 +316,21 @@ export function TimetableView({
           </div>
         </div>
         <div className="week-jump">
-          <select
-            className="input compact"
-            value={weekIndex >= 0 ? weekStart : ''}
-            onChange={(e) => e.target.value && setWeekStart(e.target.value)}
-            title="Jump to semester week"
-          >
-            {weekIndex < 0 && <option value="">Jump to week…</option>}
-            {semWeeks.map((w, i) => (
-              <option key={w} value={w}>
-                Week {i + 1} · {formatDate(w)}
-              </option>
-            ))}
-          </select>
-          <input
-            type="date"
-            className="input compact"
-            title="Go to date"
-            value=""
-            onChange={(e) => isValidISODate(e.target.value) && setWeekStart(startOfWeek(e.target.value))}
-          />
+          <WeekPicker semester={semester} weekStart={weekStart} onChange={setWeekStart} />
+          {/* The whole button opens the native date picker; the input itself stays invisible underneath it. */}
+          <span className="date-jump">
+            <button className="icon-btn bordered" title="Go to date" onClick={() => dateRef.current?.showPicker()}>
+              <Calendar size={16} />
+            </button>
+            <input
+              ref={dateRef}
+              type="date"
+              tabIndex={-1}
+              aria-hidden="true"
+              value=""
+              onChange={(e) => isValidISODate(e.target.value) && setWeekStart(startOfWeek(e.target.value))}
+            />
+          </span>
         </div>
         <span className="spacer" />
         <div className="week-stats" title="Completed this week">

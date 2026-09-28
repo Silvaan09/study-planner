@@ -4,6 +4,8 @@ import { useLoad, useUi } from '../ui';
 import { addDays, diffDays, formatDate, startOfWeek, todayISO, type ISODate } from '../../shared/dates';
 import { EXERCISE_STATUS_LABEL, type ExerciseStatus, type OutstandingItem, type Semester } from '../../shared/types';
 import { ExerciseDialog } from '../dialogs';
+import { useWeekCompletion } from '../actions';
+import { exerciseWeeks } from '../../shared/progress';
 import { Alert, Calendar, Check, Flag, StatusIcon } from '../components/Icons';
 
 function dayHeading(date: ISODate, today: ISODate): string {
@@ -21,6 +23,7 @@ function plural(n: number, word: string) {
 
 export function OutstandingView({ semester, showWeek }: { semester: Semester; showWeek: (weekStart: ISODate) => void }) {
   const ui = useUi();
+  const completing = useWeekCompletion(semester.id);
   const today = todayISO();
   const { data } = useLoad(() => api.getOutstanding(semester.id, today), [semester.id, today]);
   const subjects = data?.subjects ?? [];
@@ -49,7 +52,7 @@ export function OutstandingView({ semester, showWeek }: { semester: Semester; sh
   const completeLecture = (item: Extract<OutstandingItem, { kind: 'lecture' }>) => {
     const o = item.occurrence;
     void ui.run(async () => {
-      await api.setLectureCompleted(o.lectureId, o.weekStart, true);
+      await completing([o.weekStart], () => api.setLectureCompleted(o.lectureId, o.weekStart, true));
       ui.toast(`"${o.title}" (${formatDate(o.date, { weekday: true })}) completed`, {
         kind: 'success',
         action: { label: 'Undo', run: () => void ui.run(() => api.setLectureCompleted(o.lectureId, o.weekStart, false)) },
@@ -57,9 +60,9 @@ export function OutstandingView({ semester, showWeek }: { semester: Semester; sh
     });
   };
 
-  const setStatus = (id: number, title: string, prev: ExerciseStatus, status: ExerciseStatus) =>
+  const setStatus = (id: number, title: string, plannedDates: ISODate[], prev: ExerciseStatus, status: ExerciseStatus) =>
     void ui.run(async () => {
-      await api.setExerciseStatus(id, status);
+      await completing(status === 'completed' ? exerciseWeeks(plannedDates) : [], () => api.setExerciseStatus(id, status));
       if (status === 'completed') {
         ui.toast(`"${title}" completed`, {
           kind: 'success',
@@ -145,7 +148,7 @@ export function OutstandingView({ semester, showWeek }: { semester: Semester; sh
                   <select
                     className={`status-select status-${e.status}`}
                     value={e.status}
-                    onChange={(ev) => setStatus(e.id, e.title, e.status, ev.target.value as ExerciseStatus)}
+                    onChange={(ev) => setStatus(e.id, e.title, e.plannedDates, e.status, ev.target.value as ExerciseStatus)}
                     title="Status"
                   >
                     {(['not_started', 'in_progress', 'completed'] as ExerciseStatus[]).map((st) => (
