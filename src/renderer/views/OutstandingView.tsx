@@ -2,11 +2,12 @@ import { useMemo, type CSSProperties } from 'react';
 import { api } from '../api';
 import { useLoad, useUi } from '../ui';
 import { addDays, diffDays, formatDate, startOfWeek, todayISO, type ISODate } from '../../shared/dates';
-import { EXERCISE_STATUS_LABEL, type ExerciseStatus, type OutstandingItem, type Semester } from '../../shared/types';
+import { EXERCISE_STATUS_LABEL, type ExerciseStatus, type OutstandingItem, type Semester, type Subject } from '../../shared/types';
 import { ExerciseDialog } from '../dialogs';
 import { useWeekCompletion } from '../actions';
 import { exerciseWeeks } from '../../shared/progress';
 import { Alert, Calendar, Check, Flag, StatusIcon } from '../components/Icons';
+import { FocusPill } from '../components/FocusPill';
 
 function dayHeading(date: ISODate, today: ISODate): string {
   const d = diffDays(today, date);
@@ -21,7 +22,18 @@ function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
 
-export function OutstandingView({ semester, showWeek }: { semester: Semester; showWeek: (weekStart: ISODate) => void }) {
+export function OutstandingView({
+  semester,
+  showWeek,
+  focus,
+  clearFocus,
+}: {
+  semester: Semester;
+  showWeek: (weekStart: ISODate) => void;
+  /** Subject picked in the sidebar: only its items are listed. */
+  focus: Subject | null;
+  clearFocus: () => void;
+}) {
   const ui = useUi();
   const completing = useWeekCompletion(semester.id);
   const today = todayISO();
@@ -29,17 +41,22 @@ export function OutstandingView({ semester, showWeek }: { semester: Semester; sh
   const subjects = data?.subjects ?? [];
   const subjectById = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
 
+  const items = useMemo(() => {
+    const all = data?.items ?? [];
+    if (!focus) return all;
+    return all.filter((i) => (i.kind === 'lecture' ? i.occurrence.subjectId : i.exercise.subjectId) === focus.id);
+  }, [data, focus]);
+
   const groups = useMemo(() => {
     const m = new Map<ISODate, OutstandingItem[]>();
-    for (const item of data?.items ?? []) {
+    for (const item of items) {
       if (!m.has(item.date)) m.set(item.date, []);
       m.get(item.date)!.push(item);
     }
     return [...m.entries()];
-  }, [data]);
+  }, [items]);
 
   const counts = useMemo(() => {
-    const items = data?.items ?? [];
     // "Open" = relevant now: planned for today or earlier, or due within the next 7 days.
     const dueLimit = addDays(today, 7);
     return {
@@ -47,7 +64,7 @@ export function OutstandingView({ semester, showWeek }: { semester: Semester; sh
       exercises: items.filter((i) => i.kind === 'exercise' && (i.exercise.plannedDate <= today || i.exercise.deadlineDate <= dueLimit)).length,
       lectures: items.filter((i) => i.kind === 'lecture').length,
     };
-  }, [data, today]);
+  }, [items, today]);
 
   const completeLecture = (item: Extract<OutstandingItem, { kind: 'lecture' }>) => {
     const o = item.occurrence;
@@ -78,6 +95,8 @@ export function OutstandingView({ semester, showWeek }: { semester: Semester; sh
           <h1>Outstanding</h1>
           <div className="week-sub">Everything in {semester.name} that isn't completed yet, oldest first</div>
         </div>
+        <span className="spacer" />
+        <FocusPill subject={focus} onClear={clearFocus} />
       </header>
 
       <div className="stat-row">
@@ -104,11 +123,11 @@ export function OutstandingView({ semester, showWeek }: { semester: Semester; sh
         </div>
       </div>
 
-      {data && data.items.length === 0 && (
+      {data && items.length === 0 && (
         <div className="empty-state">
           <Check size={36} />
           <h2>All caught up</h2>
-          <p>No uncompleted lectures or open exercises in this semester.</p>
+          <p>No uncompleted lectures or open exercises {focus ? `in ${focus.name}` : 'in this semester'}.</p>
         </div>
       )}
 
@@ -192,7 +211,7 @@ export function OutstandingView({ semester, showWeek }: { semester: Semester; sh
           </section>
         ))}
       </div>
-      {data && data.items.length > 0 && <p className="muted small list-foot">Lectures are listed from the day they take place until you mark them completed.</p>}
+      {items.length > 0 && <p className="muted small list-foot">Lectures are listed from the day they take place until you mark them completed.</p>}
     </div>
   );
 }

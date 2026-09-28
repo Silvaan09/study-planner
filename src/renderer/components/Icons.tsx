@@ -24,6 +24,39 @@ function Svg({ size = 16, children, ...rest }: P) {
 export const ChevronLeft = (p: P) => <Svg {...p}><path d="m15 18-6-6 6-6" /></Svg>;
 export const ChevronRight = (p: P) => <Svg {...p}><path d="m9 18 6-6-6-6" /></Svg>;
 export const ChevronDown = (p: P) => <Svg {...p}><path d="m6 9 6 6 6-6" /></Svg>;
+export const ChevronUp = (p: P) => <Svg {...p}><path d="m18 15-6-6-6 6" /></Svg>;
+export const Settings = (p: P) => (
+  <Svg {...p}>
+    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+    <circle cx="12" cy="12" r="3" />
+  </Svg>
+);
+export const Sliders = (p: P) => (
+  <Svg {...p}>
+    <path d="M20 7h-9M14 17H5" />
+    <circle cx="17" cy="17" r="3" />
+    <circle cx="7" cy="7" r="3" />
+  </Svg>
+);
+export const Info = (p: P) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 16v-4M12 8h.01" />
+  </Svg>
+);
+export const Volume = (p: P) => (
+  <Svg {...p}>
+    <path d="M11 5 6 9H2v6h4l5 4V5z" />
+    <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+    <path d="M19 5a10 10 0 0 1 0 14" />
+  </Svg>
+);
+export const VolumeOff = (p: P) => (
+  <Svg {...p}>
+    <path d="M11 5 6 9H2v6h4l5 4V5z" />
+    <path d="m22 9-6 6M16 9l6 6" />
+  </Svg>
+);
 export const Plus = (p: P) => <Svg {...p}><path d="M12 5v14M5 12h14" /></Svg>;
 export const Check = (p: P) => <Svg {...p}><path d="M20 6 9 17l-5-5" /></Svg>;
 export const X = (p: P) => <Svg {...p}><path d="M18 6 6 18M6 6l12 12" /></Svg>;

@@ -290,11 +290,14 @@ export class StudyService {
          FROM exercise_series es WHERE es.subject_id = ? AND es.deleted_at IS NULL ORDER BY es.base_title COLLATE NOCASE`,
         subject.id,
       ).map((r) => ({ ...this.mapSeries(r), occurrenceCount: r.occ }));
-      const exerciseCount = this.get<{ n: number }>(
-        `SELECT count(*) n FROM ${EXERCISE_FROM} WHERE x.subject_id = ? AND ${LIVE_EXERCISE}`,
-        subject.id,
-      )!.n;
-      return { subject, lectures, series, exerciseCount };
+      const exercises = this.toExercises(
+        this.all(
+          `SELECT x.* FROM ${EXERCISE_FROM} WHERE x.subject_id = ? AND ${LIVE_EXERCISE}
+           ORDER BY x.deadline_date, x.planned_date, x.sequence_number, x.title COLLATE NOCASE`,
+          subject.id,
+        ),
+      );
+      return { subject, lectures, series, exercises, exerciseCount: exercises.length };
     });
   }
 

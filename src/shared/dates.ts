@@ -68,6 +68,24 @@ export function maxDate(a: ISODate, b: ISODate): ISODate {
   return a >= b ? a : b;
 }
 
+/** First day of the month containing `date`. */
+export function startOfMonth(date: ISODate): ISODate {
+  return `${date.slice(0, 7)}-01`;
+}
+
+export function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate(); // month is 1-based; day 0 = last day of that month
+}
+
+/** Same day `months` months later, clamped to the end of the target month (31 Jan + 1 → 28/29 Feb). */
+export function addMonths(date: ISODate, months: number): ISODate {
+  const total = +date.slice(0, 4) * 12 + (+date.slice(5, 7) - 1) + months;
+  const y = Math.floor(total / 12);
+  const m = (total % 12) + 1;
+  const d = Math.min(+date.slice(8, 10), daysInMonth(y, m));
+  return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
 /** Mondays of every week that overlaps [start, end]. */
 export function weeksBetween(start: ISODate, end: ISODate): ISODate[] {
   const weeks: ISODate[] = [];
@@ -99,7 +117,13 @@ export function minutesToTime(minutes: number): string {
 
 export const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 export const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** "September 2026" */
+export function formatMonth(date: ISODate): string {
+  return `${MONTH_NAMES[+date.slice(5, 7) - 1]} ${+date.slice(0, 4)}`;
+}
 
 export function formatDate(date: ISODate, opts: { weekday?: boolean; year?: boolean } = {}): string {
   const d = toUTC(date);

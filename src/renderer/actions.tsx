@@ -3,10 +3,12 @@ import { Confirm, ScopeChooser, useUi } from './ui';
 import { dateInWeek, formatDate, type ISODate } from '../shared/dates';
 import type { DeleteResult, Exercise, Id, Lecture, Semester, Subject } from '../shared/types';
 import { biggerCelebration, celebrationFor, weekProgress, type CelebrationKind } from '../shared/progress';
+import { playDing } from './sound';
 
 /**
  * Wraps a completion change: compares the given weeks before and after it and celebrates
  * when all lectures and/or exercises of one of them just became completed. Pass no weeks to skip the check.
+ * Passing weeks means something is being checked off, which also plays the ding.
  */
 export function useWeekCompletion(semesterId: Id) {
   const ui = useUi();
@@ -15,6 +17,7 @@ export function useWeekCompletion(semesterId: Id) {
     const before = await snapshot();
     await change();
     if (weeks.length === 0) return;
+    playDing();
     const after = await snapshot();
     let best: { kind: CelebrationKind; week: ISODate } | null = null;
     for (const [i, week] of weeks.entries()) {

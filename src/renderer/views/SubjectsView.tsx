@@ -1,19 +1,44 @@
-import type { CSSProperties } from 'react';
+import { Fragment, useState, type CSSProperties } from 'react';
 import { api } from '../api';
 import { useLoad, useUi } from '../ui';
 import { useActions } from '../actions';
-import { WEEKDAY_SHORT } from '../../shared/dates';
-import type { Semester, Subject } from '../../shared/types';
+import { WEEKDAY_SHORT, formatDate } from '../../shared/dates';
+import type { Exercise, Id, Semester, Subject } from '../../shared/types';
 import { ExerciseDialog, LectureDialog, SubjectDialog } from '../dialogs';
-import { Book, Pencil, Plus, Repeat, Trash } from '../components/Icons';
+import { FocusPill } from '../components/FocusPill';
+import { Book, ChevronDown, ChevronRight, Flag, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
 
-export function SubjectsView({ semester }: { semester: Semester }) {
+export function SubjectsView({ semester, focus, clearFocus }: { semester: Semester; focus: Subject | null; clearFocus: () => void }) {
   const ui = useUi();
   const actions = useActions();
   const { data } = useLoad(() => api.subjectOverview(semester.id), [semester.id]);
   const subjects: Subject[] = (data ?? []).map((o) => o.subject);
 
+  const [expanded, setExpanded] = useState<ReadonlySet<Id>>(new Set());
+
   const newSubject = () => ui.dialog((close) => <SubjectDialog semesterId={semester.id} close={close} />);
+
+  const toggle = (seriesId: Id) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(seriesId)) next.add(seriesId);
+      return next;
+    });
+
+  const exerciseRow = (e: Exercise) => (
+    <button
+      key={e.id}
+      className={`row-item row-exercise status-${e.status}`}
+      title="Edit exercise"
+      onClick={() => ui.dialog((close) => <ExerciseDialog semester={semester} subjects={subjects} exerciseId={e.id} close={close} />)}
+    >
+      <StatusIcon status={e.status} size={13} />
+      <span className="row-title">{e.title}</span>
+      <span className="row-due">
+        <Flag size={11} /> {formatDate(e.deadlineDate, { weekday: true })}
+      </span>
+    </button>
+  );
 
   return (
     <div className="page">
@@ -23,6 +48,7 @@ export function SubjectsView({ semester }: { semester: Semester }) {
           <div className="week-sub">{semester.name} — subjects, weekly lectures and exercise series</div>
         </div>
         <span className="spacer" />
+        <FocusPill subject={focus} onClear={clearFocus} />
         <button className="btn btn-primary" onClick={newSubject}>
           <Plus size={15} /> Subject
         </button>
@@ -40,8 +66,8 @@ export function SubjectsView({ semester }: { semester: Semester }) {
       )}
 
       <div className="subject-grid">
-        {(data ?? []).map(({ subject, lectures, series, exerciseCount }) => (
-          <article key={subject.id} className="subject-card" style={{ '--c': subject.color } as CSSProperties}>
+        {(data ?? []).map(({ subject, lectures, series, exercises, exerciseCount }) => (
+          <article key={subject.id} className={`subject-card ${focus && focus.id !== subject.id ? 'dimmed' : ''}`} style={{ '--c': subject.color } as CSSProperties}>
             <header>
               <span className="subject-swatch" />
               <h2>{subject.name}</h2>
@@ -82,25 +108,39 @@ export function SubjectsView({ semester }: { semester: Semester }) {
               <p className="muted small">
                 {exerciseCount} exercise{exerciseCount === 1 ? '' : 's'} in total
               </p>
-              {series.map((s) => (
-                <div key={s.id} className="row-item">
-                  <Repeat size={13} />
-                  <span className="row-title">
-                    {s.baseTitle}
-                    <span className="muted"> · every {s.intervalWeeks === 1 ? 'week' : `${s.intervalWeeks} weeks`} · {s.occurrenceCount} active</span>
-                  </span>
-                  <button
-                    className="btn btn-ghost small"
-                    title="Append the next occurrence"
-                    onClick={async () => {
-                      const more = await ui.run(() => api.extendSeries(s.id, 1));
-                      if (more) ui.toast(`Added ${more[0].title}`, { kind: 'success' });
-                    }}
-                  >
-                    <Plus size={13} /> Next
-                  </button>
-                </div>
-              ))}
+              {series.map((s) => {
+                const open = expanded.has(s.id);
+                return (
+                  <Fragment key={s.id}>
+                    <div className="row-item">
+                      <button className="row-toggle" aria-expanded={open} title={open ? 'Hide exercises' : 'Show exercises'} onClick={() => toggle(s.id)}>
+                        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                        <Repeat size={13} />
+                        <span className="row-title">
+                          {s.baseTitle}
+                          <span className="muted"> · every {s.intervalWeeks === 1 ? 'week' : `${s.intervalWeeks} weeks`} · {s.occurrenceCount} active</span>
+                        </span>
+                      </button>
+                      <button
+                        className="btn btn-ghost small"
+                        title="Append the next occurrence"
+                        onClick={async () => {
+                          const more = await ui.run(() => api.extendSeries(s.id, 1));
+                          if (more) ui.toast(`Added ${more[0].title}`, { kind: 'success' });
+                        }}
+                      >
+                        <Plus size={13} /> Next
+                      </button>
+                    </div>
+                    {open && (
+                      <div className="row-children">
+                        {exercises.filter((e) => e.seriesId === s.id).map(exerciseRow)}
+                      </div>
+                    )}
+                  </Fragment>
+                );
+              })}
+              {exercises.filter((e) => e.seriesId === null).map(exerciseRow)}
               <button
                 className="btn btn-ghost small"
                 onClick={() => ui.dialog((close) => <ExerciseDialog semester={semester} subjects={subjects} defaults={{ subjectId: subject.id }} close={close} />)}
