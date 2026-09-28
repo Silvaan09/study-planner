@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react';
 import { api } from '../api';
 import { useLoad, useUi } from '../ui';
 import { useActions, useWeekCompletion } from '../actions';
@@ -8,7 +8,6 @@ import {
   formatDate,
   formatWeekRange,
   isoWeekNumber,
-  isValidISODate,
   minutesToTime,
   startOfWeek,
   timeToMinutes,
@@ -19,11 +18,14 @@ import {
   type ISODate,
 } from '../../shared/dates';
 import { exerciseWeeks, weekProgress } from '../../shared/progress';
-import { EXERCISE_STATUS_LABEL, type Exercise, type ExerciseStatus, type LectureOccurrence, type Semester } from '../../shared/types';
+import { EXERCISE_STATUS_LABEL, type Exercise, type ExerciseStatus, type LectureOccurrence, type Semester, type Subject } from '../../shared/types';
 import { ExerciseDialog, LectureDialog } from '../dialogs';
 import { ContextMenu, type MenuState } from '../components/ContextMenu';
 import { WeekPicker } from '../components/WeekPicker';
-import { Calendar, Check, ChevronLeft, ChevronRight, Flag, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
+import { FocusPill } from '../components/FocusPill';
+import { DatePopover } from '../components/DatePicker';
+import { bestTopMinute } from '../timetableScroll';
+import { Calendar, Check, ChevronLeft, ChevronRight, Flag, Info, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
 
 const HOUR_PX = 64;
 const NEXT_STATUS: Record<ExerciseStatus, ExerciseStatus> = { not_started: 'in_progress', in_progress: 'completed', completed: 'not_started' };
@@ -77,10 +79,15 @@ export function TimetableView({
   semester,
   weekStart,
   setWeekStart,
+  focus,
+  clearFocus,
 }: {
   semester: Semester;
   weekStart: ISODate;
   setWeekStart: (w: ISODate) => void;
+  /** Subject picked in the sidebar; everything else is greyed out. */
+  focus: Subject | null;
+  clearFocus: () => void;
 }) {
   const ui = useUi();
   const actions = useActions();
@@ -93,7 +100,13 @@ export function TimetableView({
   const [dragging, setDragging] = useState<{ e: Exercise; from: ISODate } | null>(null);
   const [dropDay, setDropDay] = useState<ISODate | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const dateRef = useRef<HTMLInputElement>(null);
+  const dateBtnRef = useRef<HTMLButtonElement>(null);
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const closeJump = useCallback((refocus: boolean) => {
+    setJumpOpen(false);
+    if (refocus) dateBtnRef.current?.focus();
+  }, []);
+  const stickyRef = useRef<HTMLDivElement>(null);
 
   const subjects = data?.subjects ?? [];
   const subjectById = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
@@ -112,14 +125,27 @@ export function TimetableView({
     return [Math.floor(lo / 60), Math.min(24, Math.ceil(hi / 60))];
   }, [data]);
 
-  // Scroll so the first lecture (or 08:00) is in view when the week changes.
-  useEffect(() => {
+  // Once the new week's lectures are loaded, scroll so that as many of them as possible are fully visible
+  // (starting at 08:00 whenever that shows them all). Only on week change, not on every data refresh.
+  const scrolledFor = useRef<string | null>(null);
+  useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (!el || !data) return;
-    const earliest = Math.min(...data.lectures.map((l) => timeToMinutes(l.startTime)), 8 * 60);
-    el.scrollTop = Math.max(0, ((earliest - firstHour * 60) / 60) * HOUR_PX - 16);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStart, data !== undefined]);
+    const key = `${semester.id}:${weekStart}`;
+    if (!el || !data || data.weekStart !== weekStart || scrolledFor.current === key) return;
+    scrolledFor.current = key;
+    const stickyPx = stickyRef.current?.offsetHeight ?? 0;
+    const top = bestTopMinute(
+      data.lectures.map((l) => ({ start: timeToMinutes(l.startTime), end: timeToMinutes(l.endTime) })),
+      {
+        gridStart: firstHour * 60,
+        gridEnd: lastHour * 60,
+        visible: ((el.clientHeight - stickyPx) / HOUR_PX) * 60,
+        preferred: 8 * 60 - 15,
+        pad: 15,
+      },
+    );
+    el.scrollTop = ((top - firstHour * 60) / 60) * HOUR_PX;
+  }, [data, weekStart, semester.id, firstHour, lastHour]);
 
   // Keyboard: ← → switch weeks, T = today.
   useEffect(() => {
@@ -289,6 +315,7 @@ export function TimetableView({
 
   const colorOf = (subjectId: number) => subjectById.get(subjectId)?.color ?? '#888';
   const subjectName = (subjectId: number) => subjectById.get(subjectId)?.name ?? '';
+  const dim = (subjectId: number) => (focus && subjectId !== focus.id ? 'dimmed' : '');
 
   const weekStats = useMemo(
     () => (data ? weekProgress(data) : { lectures: 0, lecturesDone: 0, exercises: 0, exercisesDone: 0, exercisesInProgress: 0 }),
@@ -317,22 +344,29 @@ export function TimetableView({
         </div>
         <div className="week-jump">
           <WeekPicker semester={semester} weekStart={weekStart} onChange={setWeekStart} />
-          {/* The whole button opens the native date picker; the input itself stays invisible underneath it. */}
-          <span className="date-jump">
-            <button className="icon-btn bordered" title="Go to date" onClick={() => dateRef.current?.showPicker()}>
-              <Calendar size={16} />
-            </button>
-            <input
-              ref={dateRef}
-              type="date"
-              tabIndex={-1}
-              aria-hidden="true"
-              value=""
-              onChange={(e) => isValidISODate(e.target.value) && setWeekStart(startOfWeek(e.target.value))}
+          <button
+            ref={dateBtnRef}
+            className={`icon-btn bordered ${jumpOpen ? 'active' : ''}`}
+            title="Go to date"
+            aria-haspopup="dialog"
+            aria-expanded={jumpOpen}
+            onClick={() => setJumpOpen((o) => !o)}
+          >
+            <Calendar size={16} />
+          </button>
+          {jumpOpen && dateBtnRef.current && (
+            <DatePopover
+              anchor={dateBtnRef.current}
+              value={weekStart}
+              weeks
+              range={{ start: semester.startDate, end: semester.endDate }}
+              onSelect={(d) => setWeekStart(startOfWeek(d))}
+              onClose={closeJump}
             />
-          </span>
+          )}
         </div>
         <span className="spacer" />
+        <FocusPill subject={focus} onClear={clearFocus} />
         <div className="week-stats" title="Completed this week">
           <span>
             <strong>{weekStats.lecturesDone}</strong>/{weekStats.lectures} lectures
@@ -351,17 +385,39 @@ export function TimetableView({
 
       {subjects.length === 0 && data && (
         <div className="empty-hint">
-          This semester has no subjects yet. Add subjects in <strong>Subjects</strong>, then create lectures and exercises.
+          This semester has no subjects yet. Add subjects in <strong>Manage subjects</strong>, then create lectures and exercises.
         </div>
       )}
 
       <div className={`timetable ${dragging ? 'is-dragging' : ''}`} style={gridStyle}>
         {/* One scroll container for all rows, so every row has the same width and the day lines align. */}
         <div className="tt-scroll" ref={scrollRef}>
-        <div className="tt-sticky">
+        <div className="tt-sticky" ref={stickyRef}>
         {/* Day headers */}
         <div className="tt-row tt-head">
-          <div className="tt-gutter" />
+          <div className="tt-gutter tt-corner">
+            {/* Legend for the card styles, on hover or keyboard focus. */}
+            <button className="icon-btn small legend-btn" aria-label="Legend">
+              <Info size={15} />
+            </button>
+            <div className="legend-pop" role="tooltip">
+              <div className="legend-key">
+                <span className="key key-lecture" /> Lecture
+              </div>
+              <div className="legend-key">
+                <span className="key key-done" /> Completed
+              </div>
+              <div className="legend-key">
+                <span className="key key-missed" /> Missed (past, not completed)
+              </div>
+              <div className="legend-key">
+                <span className="key key-plan" /> To do (exercise planned that day)
+              </div>
+              <div className="legend-key">
+                <span className="key key-due" /> Deadline
+              </div>
+            </div>
+          </div>
           {days.map((d, i) => (
             <div key={d} className={`tt-day-head ${dayClass(d)}`} {...dropProps(d)}>
               <span className="dow">{WEEKDAY_SHORT[i]}</span>
@@ -388,7 +444,7 @@ export function TimetableView({
                   return (
                     <div
                       key={e.id}
-                      className={`ex-chip planned status-${e.status} ${overdue ? 'overdue' : ''} ${dragging?.e.id === e.id && dragging.from === d ? 'dragging' : ''}`}
+                      className={`ex-chip planned status-${e.status} ${overdue ? 'overdue' : ''} ${dragging?.e.id === e.id && dragging.from === d ? 'dragging' : ''} ${dim(e.subjectId)}`}
                       style={{ '--c': colorOf(e.subjectId) } as CSSProperties}
                       draggable
                       onDragStart={(ev) => {
@@ -454,7 +510,7 @@ export function TimetableView({
                       key={e.id}
                       role="button"
                       tabIndex={0}
-                      className={`ex-chip due status-${e.status} ${overdue ? 'overdue' : ''}`}
+                      className={`ex-chip due status-${e.status} ${overdue ? 'overdue' : ''} ${dim(e.subjectId)}`}
                       style={{ '--c': colorOf(e.subjectId) } as CSSProperties}
                       onClick={() => openExercise(e.id)}
                       onKeyDown={(ev) => ev.key === 'Enter' && openExercise(e.id)}
@@ -515,7 +571,7 @@ export function TimetableView({
                   return (
                     <button
                       key={o.lectureId}
-                      className={`lecture ${o.completed ? 'completed' : past ? 'missed' : ''} ${height < 40 ? 'short' : ''} ${p.cols > 1 ? 'narrow' : ''}`}
+                      className={`lecture ${o.completed ? 'completed' : past ? 'missed' : ''} ${height < 40 ? 'short' : ''} ${p.cols > 1 ? 'narrow' : ''} ${dim(o.subjectId)}`}
                       style={
                         {
                           '--c': colorOf(o.subjectId),

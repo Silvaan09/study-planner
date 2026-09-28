@@ -184,6 +184,16 @@ describe('exercises', () => {
     expect(svc.getWeek(sem.id, '2026-09-14').exercises).toHaveLength(1);
   });
 
+  it('subject overview lists the live exercises of each subject by deadline', () => {
+    const list = series();
+    const [solo] = svc.createExercise({ subjectId: math.id, title: 'Essay', description: '', plannedDates: ['2026-09-20'], deadlineDate: '2026-09-22' });
+    svc.deleteExercise(list[3].id, 'this');
+    const [o] = svc.subjectOverview(sem.id);
+    expect(o.exercises.map((e) => e.id)).toEqual([list[0].id, solo.id, list[1].id, list[2].id]);
+    expect(o.exerciseCount).toBe(3 + 1);
+    expect(o.exercises[1]).toMatchObject({ seriesId: null, plannedDates: ['2026-09-20'] });
+  });
+
   it('outstanding list excludes completed and flags overdue exercises', () => {
     const [a] = svc.createExercise({ subjectId: math.id, title: 'A', description: '', plannedDates: ['2026-09-15'], deadlineDate: '2026-09-18' });
     const [b] = svc.createExercise({ subjectId: math.id, title: 'B', description: '', plannedDates: ['2026-09-16'], deadlineDate: '2026-10-18' });

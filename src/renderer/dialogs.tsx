@@ -29,6 +29,7 @@ import {
 } from '../shared/types';
 import { Modal, useUi } from './ui';
 import { Plus, Repeat, StatusIcon, Trash, X } from './components/Icons';
+import { DateField } from './components/DatePicker';
 import { useActions } from './actions';
 
 export const SUBJECT_COLORS = [
@@ -123,6 +124,7 @@ export function SemesterDialog({ semester, close }: { semester?: Semester; close
     if (s) close(s);
   };
   const weeks = isValidISODate(start) && isValidISODate(end) && !error ? Math.ceil((diffDays(start, end) + 1) / 7) : null;
+  const semesterRange = weeks ? { start, end } : undefined;
 
   return (
     <Modal
@@ -143,10 +145,10 @@ export function SemesterDialog({ semester, close }: { semester?: Semester; close
       </Field>
       <div className="field-row">
         <Field label="Start date">
-          <input type="date" className="input" value={start} onChange={(e) => setStart(e.target.value)} />
+          <DateField value={start} onChange={setStart} range={semesterRange} />
         </Field>
         <Field label="End date" error={error}>
-          <input type="date" className="input" value={end} onChange={(e) => setEnd(e.target.value)} />
+          <DateField value={end} onChange={setEnd} range={semesterRange} />
         </Field>
       </div>
       {weeks && <p className="muted small">Spans {weeks} week{weeks === 1 ? '' : 's'}. Lectures repeat weekly within these dates.</p>}
@@ -398,12 +400,14 @@ function PlannedDatesField({ dates, deadline, onChange }: { dates: ISODate[]; de
     <div className="planned-dates">
       {dates.map((d, i) => (
         <div key={i} className="planned-row">
-          <input
-            type="date"
-            className="input"
+          <DateField
             value={d}
-            max={deadline}
-            onChange={(e) => onChange(dates.map((x, j) => (j === i ? e.target.value : x)))}
+            max={isValidISODate(deadline) ? deadline : undefined}
+            marks={[
+              ...dates.filter((x, j) => j !== i && isValidISODate(x)).map((date) => ({ date, kind: 'planned' as const })),
+              ...(isValidISODate(deadline) ? [{ date: deadline, kind: 'deadline' as const }] : []),
+            ]}
+            onChange={(v) => onChange(dates.map((x, j) => (j === i ? v : x)))}
           />
           {dates.length > 1 && (
             <button type="button" className="icon-btn small" title="Remove this day" onClick={() => onChange(dates.filter((_, j) => j !== i))}>
@@ -642,7 +646,12 @@ export function ExerciseDialog({
           {repeat && plannedDates.length > 0 && <span className="field-hint">These days repeat in every occurrence of the series.</span>}
         </div>
         <Field label="Deadline (hand-in)" error={dateError}>
-          <input type="date" className="input" value={deadline} min={latestPlanned} onChange={(e) => setDeadline(e.target.value)} />
+          <DateField
+            value={deadline}
+            min={latestPlanned}
+            marks={plannedDates.map((date) => ({ date, kind: 'planned' as const }))}
+            onChange={setDeadline}
+          />
         </Field>
       </div>
 

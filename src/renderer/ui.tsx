@@ -4,6 +4,7 @@ import { X } from './components/Icons';
 import { Celebration, CELEBRATION_MS } from './components/Celebration';
 import type { ISODate } from '../shared/dates';
 import type { CelebrationKind } from '../shared/progress';
+import { playCelebration } from './sound';
 
 // ------------------------------------------------------------------ toasts
 
@@ -80,6 +81,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
   );
 
   const celebrate = useCallback<UiContext['celebrate']>((kind, weekStart) => {
+    playCelebration(kind);
     const id = nextId.current++;
     setCelebration({ id, kind, weekStart });
     setTimeout(() => setCelebration((c) => (c?.id === id ? null : c)), CELEBRATION_MS[kind]);

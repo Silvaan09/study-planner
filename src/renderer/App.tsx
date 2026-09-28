@@ -1,18 +1,26 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { api } from './api';
 import { useLoad, useUi } from './ui';
 import { formatDate, startOfWeek, todayISO, type ISODate } from '../shared/dates';
-import type { Semester } from '../shared/types';
+import type { Id, Semester } from '../shared/types';
 import { SemesterDialog } from './dialogs';
 import { TimetableView } from './views/TimetableView';
 import { OutstandingView } from './views/OutstandingView';
 import { SubjectsView } from './views/SubjectsView';
 import { TrashView } from './views/TrashView';
-import { DataView } from './views/DataView';
-import { Book, Calendar, Database, ListTodo, Pencil, Plus, Trash } from './components/Icons';
+import { SettingsView } from './views/SettingsView';
+import { Calendar, ListTodo, Pencil, Plus, Settings, Sliders, Trash, X } from './components/Icons';
 import logo from './logo.svg';
 
-type View = 'timetable' | 'outstanding' | 'subjects' | 'trash' | 'data';
+const VIEWS = ['timetable', 'outstanding', 'subjects', 'trash', 'settings'] as const;
+type View = (typeof VIEWS)[number];
+
+/** The remembered view; "data" (the Data & backups view before 1.4.0) is now part of Settings. */
+function rememberedView(): View {
+  const v = remembered<string>('view', 'timetable');
+  if (v === 'data') return 'settings';
+  return (VIEWS as readonly string[]).includes(v) ? (v as View) : 'timetable';
+}
 
 // Only UI conveniences are remembered in the browser storage; all real data is in the database.
 function remembered<T extends string>(key: string, fallback: T): T {
@@ -52,8 +60,10 @@ export function App() {
   const ui = useUi();
   const { data: semesters } = useLoad(() => api.listSemesters(), []);
   const [semesterId, setSemesterId] = useState<number | null>(() => Number(remembered('semesterId', '')) || null);
-  const [view, setView] = useState<View>(() => remembered<View>('view', 'timetable'));
+  const [view, setView] = useState<View>(rememberedView);
   const [weekStart, setWeekStart] = useState<ISODate | null>(null);
+  // Subject picked in the sidebar: the timetable greys out the others, Outstanding shows only it. Not remembered.
+  const [focusId, setFocusId] = useState<Id | null>(null);
 
   const semester = useMemo(() => (semesters ? pickSemester(semesters, semesterId) : null), [semesters, semesterId]);
 
@@ -64,6 +74,7 @@ export function App() {
     if (semester) {
       remember('semesterId', String(semester.id));
       setWeekStart(initialWeek(semester));
+      setFocusId(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [semester?.id]);
@@ -73,6 +84,10 @@ export function App() {
   const { data: outstanding } = useLoad(() => (semester ? api.getOutstanding(semester.id, todayISO()) : Promise.resolve(null)), [semester?.id]);
   const overdue = outstanding?.items.filter((i) => i.kind === 'exercise' && i.overdue).length ?? 0;
   const open = outstanding?.items.length ?? 0;
+  const { data: trash } = useLoad(() => api.listTrash(), []);
+  const trashCount = trash?.length ?? 0;
+  // Drop the focus if that subject disappears (deleted, or moved to the trash).
+  const focus = subjects?.find((s) => s.id === focusId) ?? null;
 
   const newSemester = async () => {
     const s = await ui.dialog<Semester>((close) => <SemesterDialog close={close} />);
@@ -105,18 +120,20 @@ export function App() {
     );
   }
 
-  const nav: { id: View; label: string; icon: React.ReactNode; badge?: React.ReactNode }[] = [
-    { id: 'timetable', label: 'Timetable', icon: <Calendar size={18} /> },
-    {
-      id: 'outstanding',
-      label: 'Outstanding',
-      icon: <ListTodo size={18} />,
-      badge: open > 0 ? <span className={`nav-badge ${overdue ? 'danger' : ''}`} title={overdue ? `${overdue} overdue` : undefined}>{open}</span> : null,
-    },
-    { id: 'subjects', label: 'Subjects', icon: <Book size={18} /> },
-    { id: 'trash', label: 'Trash', icon: <Trash size={18} /> },
-    { id: 'data', label: 'Data & backups', icon: <Database size={18} /> },
-  ];
+  const navItem = (id: View, label: string, icon: ReactNode, badge?: ReactNode) => (
+    <button className={`nav-item ${view === id ? 'active' : ''}`} onClick={() => setView(id)} aria-current={view === id ? 'page' : undefined}>
+      {icon}
+      <span>{label}</span>
+      {badge}
+    </button>
+  );
+
+  /** Sidebar subject click: focus it (or unfocus when clicked again). Focus only affects the planning and subject views. */
+  const toggleFocus = (id: Id) => {
+    setFocusId((f) => (f === id ? null : id));
+    if (view === 'trash' || view === 'settings') setView('timetable');
+  };
+  const clearFocus = () => setFocusId(null);
 
   return (
     <div className="app">
@@ -156,52 +173,68 @@ export function App() {
           </div>
         </div>
 
-        <nav className="nav">
-          {nav.map((n) => (
-            <button key={n.id} className={`nav-item ${view === n.id ? 'active' : ''}`} onClick={() => setView(n.id)}>
-              {n.icon}
-              <span>{n.label}</span>
-              {n.badge}
-            </button>
-          ))}
+        <nav className="nav-section" aria-label="Planning">
+          <div className="sidebar-label">Planning</div>
+          {navItem('timetable', 'Timetable', <Calendar size={18} />)}
+          {navItem(
+            'outstanding',
+            'Outstanding',
+            <ListTodo size={18} />,
+            open > 0 ? (
+              <span className={`nav-badge ${overdue ? 'danger' : ''}`} title={overdue ? `${overdue} overdue` : `${open} open`}>
+                {open}
+              </span>
+            ) : null,
+          )}
         </nav>
 
-        {subjects && subjects.length > 0 && (
-          <div className="legend">
-            <div className="sidebar-label">Subjects</div>
-            {subjects.map((s) => (
-              <div key={s.id} className="legend-item" style={{ '--c': s.color } as CSSProperties}>
+        <nav className="nav-section" aria-label="Subjects">
+          <div className="sidebar-label">Subjects</div>
+          {subjects?.map((s) => {
+            const active = focus?.id === s.id;
+            return (
+              <button
+                key={s.id}
+                className={`subject-item ${active ? 'active' : ''} ${focus && !active ? 'faded' : ''}`}
+                style={{ '--c': s.color } as CSSProperties}
+                aria-pressed={active}
+                title={active ? `Showing only ${s.name} — click to show all subjects` : `Show only ${s.name}`}
+                onClick={() => toggleFocus(s.id)}
+              >
                 <span className="dot" />
-                {s.name}
-              </div>
-            ))}
-          </div>
-        )}
+                <span className="subject-name">{s.name}</span>
+                {active && <X size={13} />}
+              </button>
+            );
+          })}
+          {subjects?.length === 0 && <p className="sidebar-empty">No subjects yet.</p>}
+          {navItem('subjects', 'Manage subjects', <Sliders size={18} />)}
+        </nav>
 
-        <div className="sidebar-foot">
-          <div className="legend-key">
-            <span className="key key-lecture" /> Lecture <span className="key key-done" /> Completed
-          </div>
-          <div className="legend-key">
-            <span className="key key-plan" /> To do <span className="key key-due" /> Deadline
-          </div>
-        </div>
+        <nav className="nav-section sidebar-foot" aria-label="More">
+          {navItem('trash', 'Trash', <Trash size={18} />, trashCount ? <span className="nav-badge muted">{trashCount}</span> : null)}
+          {navItem('settings', 'Settings', <Settings size={18} />)}
+        </nav>
       </aside>
 
       <main className="main">
-        {view === 'timetable' && weekStart && <TimetableView semester={semester} weekStart={weekStart} setWeekStart={setWeekStart} />}
+        {view === 'timetable' && weekStart && (
+          <TimetableView semester={semester} weekStart={weekStart} setWeekStart={setWeekStart} focus={focus} clearFocus={clearFocus} />
+        )}
         {view === 'outstanding' && (
           <OutstandingView
             semester={semester}
+            focus={focus}
+            clearFocus={clearFocus}
             showWeek={(w) => {
               setWeekStart(w);
               setView('timetable');
             }}
           />
         )}
-        {view === 'subjects' && <SubjectsView semester={semester} />}
+        {view === 'subjects' && <SubjectsView semester={semester} focus={focus} clearFocus={clearFocus} />}
         {view === 'trash' && <TrashView />}
-        {view === 'data' && <DataView />}
+        {view === 'settings' && <SettingsView />}
       </main>
     </div>
   );

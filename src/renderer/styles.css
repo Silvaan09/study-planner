@@ -171,6 +171,7 @@ code {
   place-items: center;
   width: 32px;
   height: 32px;
+  padding: 0; /* the browser's default button padding would push the icon off-centre in small buttons */
   border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
@@ -219,6 +220,291 @@ textarea.input {
 .time-input {
   font-variant-numeric: tabular-nums;
 }
+.icon-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ date picker */
+.date-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.date-field span {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.date-field .placeholder {
+  color: var(--text-3);
+}
+.date-field svg {
+  flex: none;
+  color: var(--text-3);
+  transition: color 0.12s;
+}
+.date-field:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+}
+.date-field:hover svg,
+.date-field.open svg {
+  color: var(--accent);
+}
+.date-field.open {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.date-popover {
+  position: fixed;
+  z-index: 300;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  animation: pop 0.1s ease-out;
+}
+.date-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 266px;
+}
+.dp-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+}
+.dp-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  margin-left: -4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dp-title svg {
+  color: var(--text-3);
+}
+.dp-title:hover {
+  background: var(--surface-3);
+}
+.dp-year {
+  flex: 1;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.dp-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: 8px;
+  outline: none;
+}
+.dp-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  border-radius: 8px;
+}
+/* Continuous week list: scrolls a week per wheel notch (see CalendarPanel), fades at the edges. Rows are virtualized (absolutely placed). */
+.dp-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 6px, #000 calc(100% - 6px), transparent 100%);
+}
+.dp-scroll::-webkit-scrollbar {
+  display: none;
+}
+.dp-track {
+  position: relative;
+}
+.dp-track .dp-week {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+.dp-mon {
+  position: absolute;
+  top: 1px;
+  left: 0;
+  right: 0;
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+.dp-weekdays span {
+  display: grid;
+  place-items: center;
+  height: 24px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+.dp-weekdays .weekend {
+  color: color-mix(in srgb, var(--text-3) 70%, transparent);
+}
+.dp-day {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.dp-day.weekend {
+  color: var(--text-2);
+}
+.dp-day.in-range {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.dp-day.other {
+  color: var(--text-3);
+}
+.dp-day:hover:not(:disabled),
+.dp-grid:focus-visible .dp-day.focused {
+  background: var(--surface-3);
+}
+.dp-grid:focus-visible .dp-day.focused {
+  border-color: var(--accent);
+}
+.dp-day.today {
+  color: var(--accent);
+  font-weight: 700;
+}
+.dp-day.today::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.dp-grid .dp-day.selected,
+.dp-grid .dp-day.selected:hover:not(:disabled),
+.dp-grid:focus-visible .dp-day.selected.focused {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+.dp-grid:focus-visible .dp-day.selected.focused {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
+}
+.dp-day.selected::before {
+  background: var(--on-accent);
+}
+.dp-day:disabled {
+  color: color-mix(in srgb, var(--text-3) 50%, transparent);
+  cursor: not-allowed;
+}
+/* Week mode: the whole row reacts, since any day jumps to its week. */
+.dp-grid.weeks .dp-week:hover {
+  background: var(--surface-3);
+}
+.dp-grid.weeks .dp-week:hover .dp-day:hover {
+  background: none;
+}
+.dp-grid.weeks .dp-week.selected {
+  background: var(--accent-soft);
+}
+.dp-grid.weeks .dp-week.selected .dp-day:not(.other) {
+  color: var(--accent);
+}
+.dp-mark {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.dp-day .dp-mark {
+  position: absolute;
+  bottom: 3px;
+  left: calc(50% - 2.5px);
+}
+.dp-mark.planned {
+  background: var(--accent);
+}
+.dp-mark.deadline {
+  background: var(--danger);
+}
+.dp-day.selected .dp-mark {
+  box-shadow: 0 0 0 1.5px var(--accent);
+  background: var(--on-accent);
+}
+.dp-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.dp-legend {
+  display: inline-flex;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.dp-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.dp-months {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px 0 2px;
+}
+.dp-month {
+  height: 44px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  font-weight: 500;
+  cursor: pointer;
+}
+.dp-month:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+.dp-month.today {
+  color: var(--accent);
+  font-weight: 700;
+}
+.dp-month.selected {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+.dp-month:disabled {
+  color: color-mix(in srgb, var(--text-3) 55%, transparent);
+  cursor: not-allowed;
+}
 
 /* ------------------------------------------------------------------ layout */
 .app {
@@ -229,8 +515,8 @@ textarea.input {
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 18px 14px 14px;
+  gap: 22px;
+  padding: 18px 12px 12px;
   background: var(--surface);
   border-right: 1px solid var(--border);
   overflow-y: auto;
@@ -241,7 +527,7 @@ textarea.input {
   gap: 10px;
   font-weight: 700;
   font-size: 16px;
-  padding: 0 4px;
+  padding: 0 6px;
 }
 .sidebar-label {
   display: block;
@@ -250,7 +536,7 @@ textarea.input {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-3);
-  margin: 0 4px 6px;
+  margin: 0 10px 6px;
 }
 .semester-head {
   display: flex;
@@ -270,11 +556,12 @@ textarea.input {
   height: 34px;
 }
 .semester-dates {
-  margin: 6px 4px 0;
+  margin: 6px 10px 0;
   font-size: 12px;
   color: var(--text-3);
 }
-.nav {
+/* Sidebar groups: Planning, Subjects, and Trash/Settings pinned to the bottom. */
+.nav-section {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -283,7 +570,7 @@ textarea.input {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 38px;
+  height: 36px;
   padding: 0 10px;
   border: 0;
   border-radius: 8px;
@@ -322,19 +609,60 @@ textarea.input {
   background: var(--danger);
   color: #fff;
 }
-.legend {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.nav-badge.muted {
+  background: none;
+  color: var(--text-3);
+  font-weight: 600;
 }
-.legend-item {
+/* A subject in the sidebar: click to focus it (others fade out everywhere). */
+.subject-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px;
-  font-size: 13px;
+  gap: 10px;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
   color: var(--text-2);
-  overflow-wrap: anywhere;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.12s;
+}
+.subject-item .dot {
+  margin: 0 4px; /* centred under the 18px nav icons */
+}
+.subject-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.subject-item svg {
+  flex: none;
+  color: var(--text-3);
+}
+.subject-item:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.subject-item.active {
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+  color: var(--text);
+  font-weight: 600;
+}
+.subject-item.faded {
+  opacity: 0.45;
+}
+.subject-item.faded:hover {
+  opacity: 1;
+}
+.sidebar-empty {
+  margin: 0 10px 4px;
+  font-size: 12.5px;
+  color: var(--text-3);
 }
 .dot,
 .subject-dot {
@@ -347,18 +675,82 @@ textarea.input {
 }
 .sidebar-foot {
   margin-top: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 4px 0;
+  padding-top: 10px;
   border-top: 1px solid var(--border);
-  font-size: 11.5px;
+}
+/* Everything not belonging to the subject focused in the sidebar. */
+.dimmed {
+  opacity: 0.22;
+  filter: grayscale(0.85);
+  transition: opacity 0.15s, filter 0.15s;
+}
+.dimmed:hover {
+  opacity: 0.6;
+  filter: none;
+}
+.focus-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 148px; /* fits the timetable header at 1440px; longer names get an ellipsis */
+  height: 30px;
+  padding: 0 3px 0 10px;
+  border: 1px solid color-mix(in srgb, var(--c) 55%, var(--border));
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--c) 14%, var(--surface));
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.focus-pill-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.focus-pill .icon-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+}
+/* Timetable legend: info button in the top-left corner cell, popover on hover/focus. */
+.tt-corner {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.legend-btn {
   color: var(--text-3);
+  cursor: help;
+}
+.legend-pop {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% - 6px);
+  left: 8px;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 240px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--text-2);
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.tt-corner:hover .legend-pop,
+.legend-btn:focus-visible + .legend-pop {
+  display: flex;
 }
 .legend-key {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 .key {
   width: 14px;
@@ -386,6 +778,85 @@ textarea.input {
 .key-due {
   background: var(--danger-soft);
   border: 1px solid var(--danger);
+}
+.key-missed {
+  background: color-mix(in srgb, var(--accent) 30%, var(--surface));
+  border-left: 3px solid var(--accent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 55%, transparent);
+}
+.subject-card.dimmed:hover {
+  opacity: 0.8;
+}
+
+/* ------------------------------------------------------------------ settings */
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.card-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+}
+.setting-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  flex: none;
+}
+.setting-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.setting-text small {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+/* Toggle switch on a native checkbox (keeps keyboard and label behaviour). */
+.switch {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  margin: 0;
+  border-radius: 11px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-2);
+  transition: transform 0.15s, background 0.15s;
+}
+.switch:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch:checked::after {
+  transform: translateX(16px);
+  background: var(--on-accent);
 }
 .main {
   min-width: 0;
@@ -430,17 +901,6 @@ textarea.input {
 .week-jump {
   display: flex;
   gap: 6px;
-}
-.date-jump {
-  position: relative;
-  display: inline-flex;
-}
-.date-jump input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  opacity: 0;
-  pointer-events: none;
 }
 .week-picker {
   position: relative;
@@ -1267,6 +1727,55 @@ textarea.input {
   min-width: 0;
   color: var(--text);
   overflow-wrap: break-word;
+}
+.row-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.row-children {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 20px;
+}
+button.row-item {
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+button.row-item:hover {
+  background: var(--surface-2);
+}
+.row-exercise:hover .row-title {
+  color: var(--accent);
+}
+.row-exercise.status-in_progress > svg {
+  color: var(--accent);
+}
+.row-exercise.status-completed > svg {
+  color: var(--success);
+}
+.row-exercise.status-completed .row-title {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+.row-due {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ------------------------------------------------------------------ data */

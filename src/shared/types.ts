@@ -112,6 +112,8 @@ export interface SubjectOverview {
   subject: Subject;
   lectures: Lecture[];
   series: (ExerciseSeries & { occurrenceCount: number })[];
+  /** Live exercises of the subject (series occurrences and standalone), by deadline. */
+  exercises: Exercise[];
   exerciseCount: number;
 }
 
