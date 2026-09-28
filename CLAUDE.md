@@ -4,10 +4,12 @@ Windows desktop app for planning a university semester around a weekly timetable
 
 **Keep this file current.** After any change to code, scripts, tests or config, update the relevant sections here, bump the version and add a `CHANGELOG.md` entry. A Stop hook (`.claude/hooks/check-docs.mjs`, registered in `.claude/settings.json`) blocks finishing a turn when `CLAUDE.md` or `CHANGELOG.md` is older than the latest change in `src/`, `scripts/`, `tests/` or the build configs, or when `CHANGELOG.md` has no `## <version>` entry for the version in `package.json`. Bump the version before writing the changelog entry.
 
+**Always build the installer.** After every change (once the docs and version are updated), run `npm run dist` so `release/` holds a fresh `Study Planner Setup <version>.exe` for the current version. Do this even for small or unreleased changes (it rebuilds the same version's installer), and report the path of the new `.exe`, or the error if the build failed.
+
 ## Docs
 
 - `README.md` is the public GitHub landing page: user-facing, short, no internals (those belong here). Update it when a notable feature changes.
-- `docs/screenshots/*.png` are shown in the README (1440×900, dark theme, demo data). Retake them when the UI changes visibly.
+- `docs/screenshots/*.png` are shown in the README (1440×900, dark theme, demo data: "Autumn Semester 2026", subjects Chemistry/Computer Science/Mathematics/Physics, timetable shows week 2). Retake them when the UI changes visibly — launch with a throwaway `STUDY_PLANNER_DATA_DIR` and `--remote-debugging-port`, then seed and capture over CDP (`Emulation.setDeviceMetricsOverride` 1440×900, `Page.captureScreenshot`).
 - `CHANGELOG.md` lists changes per version.
 
 ## Stack & commands
@@ -39,14 +41,17 @@ Changes that don't affect the installed app (build scripts, tests, docs, Claude 
 ```
 src/shared/dates.ts        ISO-date ("YYYY-MM-DD") + "HH:MM" helpers, formatting, week math (Monday = 1)
 src/shared/types.ts        domain types + StudyApi (the full UI↔data contract)
+src/shared/progress.ts     week completion counts (weekProgress), week state (weekStatus), which celebration a change earns (celebrationFor)
 src/main/db/database.ts    open DB (WAL, integrity check), backups, migration runner
 src/main/db/migrations.ts  versioned schema — append only
 src/main/service.ts        ALL business rules + SQL (StudyService); throws UserError for user-facing messages
 src/main/main.ts           Electron window, data-folder resolution, IPC allow-list (serviceMethods)
 src/preload/preload.ts     exposes window.studyApi.call(method, args)
 src/renderer/api.ts        typed proxy over the IPC call
-src/renderer/ui.tsx        UiProvider: toasts, dialog(), run() (mutation + error toast + refresh), useLoad()
-src/renderer/actions.tsx   shared delete flows (scope chooser, confirm, Undo toast)
+src/renderer/ui.tsx        UiProvider: toasts, dialog(), run() (mutation + error toast + refresh), celebrate(), useLoad()
+src/renderer/actions.tsx   shared delete flows (scope chooser, confirm, Undo toast); useWeekCompletion (celebration check)
+src/renderer/components/Celebration.tsx  confetti overlay (click-through, auto-removed)
+src/renderer/components/WeekPicker.tsx   custom week dropdown with per-week status icons (getSemesterProgress)
 src/renderer/dialogs.tsx   Semester/Subject/Lecture/Exercise dialogs, TimeInput, StatusPicker
 src/renderer/views/        TimetableView, OutstandingView, SubjectsView, TrashView, DataView
 src/renderer/styles.css    dark theme only; tokens on :root
@@ -72,6 +77,13 @@ Trash: rows get `deleted_at` + `trash_batch_id` (one batch per user action, list
 - Deletes go to the trash first.
 - Dates: use `src/shared/dates.ts`; never time-zone-dependent `Date` math.
 
+## Celebrations
+
+- A week's progress = its lecture occurrences + the exercises with a planned date in it (`weekProgress`, also used for the timetable header counters). Exercises only *due* in a week don't count there.
+- Kinds: `lectures` / `exercises` when that category just became fully completed; `everything` instead when afterwards nothing in the week is left (the other category is complete or empty — e.g. finishing the lectures of a week without exercises). An empty category never triggers a celebration by itself.
+- Completion actions go through `useWeekCompletion(semesterId)(weeks, change)`: it snapshots those weeks via `getWeek` before and after the change, so deleting unfinished items never celebrates. Lecture → its `weekStart`; exercise → `exerciseWeeks(plannedDates)`. Pass `[]` when un-completing. Wired into TimetableView (lecture click/menu, status circle, deadline flag, status menu) and OutstandingView; status changes saved from the exercise dialog don't celebrate.
+- `ui.celebrate(kind, weekStart)` shows `Celebration` for `CELEBRATION_MS`; `prefers-reduced-motion` hides the confetti.
+
 ## Outstanding view notes
 
 - Lists every uncompleted exercise and every past/today lecture occurrence that isn't completed, grouped by date.
@@ -80,9 +92,11 @@ Trash: rows get `deleted_at` + `trash_batch_id` (one batch per user action, list
 ## Timetable UI notes
 
 - Default visible hours 07:00–21:00 (widened to fit lectures); `HOUR_PX = 64`.
-- One scroll container (`.tt-scroll`) with a sticky block (header + "To do" + "Due" rows) so day columns align exactly.
+- One scroll container (`.tt-scroll`) with a sticky block (header + "To do" + "Due" rows) so day columns align exactly. It has `overflow-anchor: none`: the view scrolls to the first lecture itself on week change, and scroll anchoring would shift that when the sticky rows change height.
 - Day column widths come from `--days`: weight 1, 1.6 (two lectures side by side), 2.2 (three+), 0.7 for completely empty days.
 - Lecture cards: top-aligned, check mark floated top right, text wraps (no mid-word breaks); hover expands a card to show all text. Past uncompleted lectures get a subtle amber outline (`.missed`).
 - Deadline cards ("Due" row): the flag/check icon (`.due-check`) toggles completed ↔ in progress; the rest of the card opens the editor. Planned cards: the status circle cycles the three statuses.
+- Week dropdown (`WeekPicker`, custom listbox since native `<option>`s can't show icons): per-week `StatusIcon` from `weekStatus` — completed (everything done), in progress (anything done or an exercise started), not started; no icon for empty weeks. While open it swallows ↑ ↓ Enter Esc so the timetable's ← → shortcuts don't fire.
+- Date jump: an `.icon-btn` whose click calls `showPicker()` on an invisible `<input type="date">` layered under it (so the whole button opens the picker).
 - Saturday/Sunday share `--weekend` tint; today is marked only in the header.
-- Before finishing UI work: `npm run typecheck && npm test`, then check visually (build + launch).
+- Before finishing UI work: `npm run typecheck && npm test`, then check visually (build + launch), then `npm run dist` (see "Always build the installer").

@@ -19,6 +19,7 @@ Windows desktop app · works fully offline · your data stays on your PC
 - **Lecture tracking**: lectures repeat every week of the semester. Click a lecture to mark that week's session as completed.
 - **Exercise planning**: every exercise has a deadline and one or more days you plan to work on it. Drag an exercise to another day to reschedule it; the app won't let you plan past the deadline.
 - **Recurring exercises**: create a whole series at once (`Problem Set 01`, `02`, …), weekly or every few weeks. You can change one occurrence, the following ones, or the whole series.
+- **Little celebrations**: a burst of confetti when you've completed all lectures or all exercises of a week, and a bigger one when the whole week is done.
 - **Outstanding list**: everything you haven't finished yet, oldest first, with overdue exercises highlighted.
 - **Multiple semesters**: each semester and its subjects stay separate, and old semesters remain available.
 - **Safe with your data**: deleted items go to a trash bin first, the database is backed up automatically, and updates keep everything you've entered.
@@ -30,6 +31,8 @@ Windows desktop app · works fully offline · your data stays on your PC
 | ![Creating a recurring exercise planned every Thursday](docs/screenshots/exercise-dialog.png) | ![Outstanding list with an overdue exercise](docs/screenshots/outstanding.png) |
 
 ![Subjects overview with weekly lectures and exercise series](docs/screenshots/subjects.png)
+
+![Confetti and a "Week complete!" message after checking off the last exercise of the week](docs/screenshots/week-complete.png)
 
 ## Installation
 

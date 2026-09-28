@@ -5,6 +5,7 @@ import path from 'node:path';
 import { openDatabase } from '../src/main/db/database';
 import { StudyService, UserError } from '../src/main/service';
 import type { Semester, Subject } from '../src/shared/types';
+import { biggerCelebration, celebrationFor, exerciseWeeks, weekProgress, weekStatus } from '../src/shared/progress';
 
 let dir: string;
 let svc: StudyService;
@@ -280,6 +281,74 @@ describe('multiple planned dates', () => {
     };
     expect(v2.backupsCreated).toHaveLength(1);
     expect(new StudyService(v2.db).getExercise(7)).toMatchObject({ plannedDate: '2026-09-16', plannedDates: ['2026-09-16'] });
+  });
+});
+
+describe('week progress and celebrations', () => {
+  const W = '2026-09-21';
+  const progress = () => weekProgress(svc.getWeek(sem.id, W));
+
+  it('counts lectures and exercises planned in the week, not ones only due in it', () => {
+    svc.createLecture({ subjectId: math.id, title: 'LA', weekday: 1, startTime: '10:00', endTime: '12:00' });
+    svc.createExercise({ subjectId: math.id, title: 'Planned', description: '', plannedDates: ['2026-09-22'], deadlineDate: '2026-09-30' });
+    svc.createExercise({ subjectId: math.id, title: 'Only due', description: '', plannedDates: ['2026-09-17'], deadlineDate: '2026-09-23' });
+    expect(progress()).toEqual({ lectures: 1, lecturesDone: 0, exercises: 1, exercisesDone: 0, exercisesInProgress: 0 });
+    expect(exerciseWeeks(['2026-09-17', '2026-09-18', '2026-09-24'])).toEqual(['2026-09-14', '2026-09-21']);
+  });
+
+  it('celebrates lectures, exercises and the whole week once each becomes complete', () => {
+    const a = svc.createLecture({ subjectId: math.id, title: 'A', weekday: 1, startTime: '10:00', endTime: '12:00' });
+    const b = svc.createLecture({ subjectId: math.id, title: 'B', weekday: 3, startTime: '10:00', endTime: '12:00' });
+    const [e] = svc.createExercise({ subjectId: math.id, title: 'Sheet', description: '', plannedDates: ['2026-09-22'], deadlineDate: '2026-09-25' });
+    const step = (change: () => void) => {
+      const before = progress();
+      change();
+      return celebrationFor(before, progress());
+    };
+    expect(step(() => svc.setLectureCompleted(a.id, W, true))).toBeNull();
+    expect(step(() => svc.setLectureCompleted(b.id, W, true))).toBe('lectures');
+    expect(step(() => svc.setExerciseStatus(e.id, 'in_progress'))).toBeNull();
+    expect(step(() => svc.setExerciseStatus(e.id, 'completed'))).toBe('everything');
+    // Re-opening and completing again celebrates again; completing the lectures last also counts as everything.
+    expect(step(() => svc.setLectureCompleted(b.id, W, false))).toBeNull();
+    expect(step(() => svc.setLectureCompleted(b.id, W, true))).toBe('everything');
+    expect(step(() => svc.setExerciseStatus(e.id, 'in_progress'))).toBeNull();
+    svc.setLectureCompleted(a.id, W, false);
+    expect(step(() => svc.setExerciseStatus(e.id, 'completed'))).toBe('exercises');
+  });
+
+  it('celebrates the whole week when the other category is empty', () => {
+    const a = svc.createLecture({ subjectId: math.id, title: 'A', weekday: 1, startTime: '10:00', endTime: '12:00' });
+    const before = progress();
+    svc.setLectureCompleted(a.id, W, true);
+    expect(celebrationFor(before, progress())).toBe('everything');
+    // And the other way round: a week with exercises but no lectures.
+    const empty = { lectures: 0, lecturesDone: 0, exercises: 0, exercisesDone: 0, exercisesInProgress: 0 };
+    expect(celebrationFor({ ...empty, exercises: 2, exercisesDone: 1 }, { ...empty, exercises: 2, exercisesDone: 2 })).toBe('everything');
+  });
+
+  it('reports the state of every semester week for the week picker', () => {
+    const l = svc.createLecture({ subjectId: math.id, title: 'LA', weekday: 1, startTime: '10:00', endTime: '12:00' });
+    const [e] = svc.createExercise({ subjectId: math.id, title: 'Sheet', description: '', plannedDates: ['2026-09-29'], deadlineDate: '2026-10-02' });
+    svc.setLectureCompleted(l.id, '2026-09-14', true);
+    svc.setExerciseStatus(e.id, 'in_progress');
+    const weeks = svc.getSemesterProgress(sem.id);
+    expect(weeks).toHaveLength(14);
+    expect(weeks[0].weekStart).toBe('2026-09-14');
+    const status = (w: string) => weekStatus(weeks.find((x) => x.weekStart === w)!);
+    expect(status('2026-09-14')).toBe('completed');
+    expect(status('2026-09-21')).toBe('not_started');
+    expect(status('2026-09-28')).toBe('in_progress');
+    svc.deleteLecture(l.id, 'all', '');
+    expect(weekStatus(svc.getSemesterProgress(sem.id)[1])).toBeNull();
+  });
+
+  it('needs something to complete and prefers the bigger celebration', () => {
+    const empty = { lectures: 0, lecturesDone: 0, exercises: 0, exercisesDone: 0, exercisesInProgress: 0 };
+    expect(celebrationFor(empty, empty)).toBeNull();
+    expect(biggerCelebration('lectures', 'everything')).toBe('everything');
+    expect(biggerCelebration('everything', 'exercises')).toBe('everything');
+    expect(biggerCelebration(null, 'lectures')).toBe('lectures');
   });
 });
 

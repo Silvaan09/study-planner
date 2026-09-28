@@ -1,7 +1,29 @@
 import { api } from './api';
 import { Confirm, ScopeChooser, useUi } from './ui';
 import { dateInWeek, formatDate, type ISODate } from '../shared/dates';
-import type { DeleteResult, Exercise, Lecture, Semester, Subject } from '../shared/types';
+import type { DeleteResult, Exercise, Id, Lecture, Semester, Subject } from '../shared/types';
+import { biggerCelebration, celebrationFor, weekProgress, type CelebrationKind } from '../shared/progress';
+
+/**
+ * Wraps a completion change: compares the given weeks before and after it and celebrates
+ * when all lectures and/or exercises of one of them just became completed. Pass no weeks to skip the check.
+ */
+export function useWeekCompletion(semesterId: Id) {
+  const ui = useUi();
+  return async (weeks: ISODate[], change: () => Promise<unknown>): Promise<void> => {
+    const snapshot = () => Promise.all(weeks.map(async (w) => weekProgress(await api.getWeek(semesterId, w))));
+    const before = await snapshot();
+    await change();
+    if (weeks.length === 0) return;
+    const after = await snapshot();
+    let best: { kind: CelebrationKind; week: ISODate } | null = null;
+    for (const [i, week] of weeks.entries()) {
+      const kind = celebrationFor(before[i], after[i]);
+      if (kind && biggerCelebration(best?.kind ?? null, kind) !== best?.kind) best = { kind, week };
+    }
+    if (best) ui.celebrate(best.kind, best.week);
+  };
+}
 
 /** Delete flows shared by all views. Everything goes to the trash and can be undone. */
 export function useActions() {
