@@ -56,9 +56,10 @@ const serviceMethods: ApiMethod[] = [
   'listSemesters', 'createSemester', 'updateSemester', 'deleteSemester',
   'listSubjects', 'subjectOverview', 'createSubject', 'updateSubject', 'deleteSubject',
   'createLecture', 'updateLecture', 'getLecture', 'deleteLecture', 'setLectureCompleted',
-  'getExercise', 'getSeries', 'createExercise', 'updateExercise', 'setExerciseStatus', 'moveExercise',
-  'deleteExercise', 'extendSeries',
-  'getWeek', 'getOutstanding', 'getSemesterProgress',
+  'getExercise', 'getSeries', 'createExercise', 'updateExercise', 'setExerciseStatus', 'setExerciseHandedIn', 'moveExercise',
+  'deleteExercise', 'extendSeries', 'setChecklistItemDone',
+  'getExam', 'createExam', 'updateExam', 'deleteExam',
+  'getWeek', 'getOutstanding', 'getSemesterProgress', 'getToday',
   'listTrash', 'restoreTrash', 'purgeTrash', 'emptyTrash',
 ];
 

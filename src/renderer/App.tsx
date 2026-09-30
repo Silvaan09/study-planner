@@ -4,15 +4,16 @@ import { useLoad, useUi } from './ui';
 import { formatDate, startOfWeek, todayISO, type ISODate } from '../shared/dates';
 import type { Id, Semester } from '../shared/types';
 import { SemesterDialog } from './dialogs';
+import { TodayView } from './views/TodayView';
 import { TimetableView } from './views/TimetableView';
 import { OutstandingView } from './views/OutstandingView';
 import { SubjectsView } from './views/SubjectsView';
 import { TrashView } from './views/TrashView';
 import { SettingsView } from './views/SettingsView';
-import { Calendar, ListTodo, Pencil, Plus, Settings, Sliders, Trash, X } from './components/Icons';
+import { Calendar, ListTodo, Pencil, Plus, Settings, Sliders, Sun, Trash, X } from './components/Icons';
 import logo from './logo.svg';
 
-const VIEWS = ['timetable', 'outstanding', 'subjects', 'trash', 'settings'] as const;
+const VIEWS = ['today', 'timetable', 'outstanding', 'subjects', 'trash', 'settings'] as const;
 type View = (typeof VIEWS)[number];
 
 /** The remembered view; "data" (the Data & backups view before 1.4.0) is now part of Settings. */
@@ -175,6 +176,7 @@ export function App() {
 
         <nav className="nav-section" aria-label="Planning">
           <div className="sidebar-label">Planning</div>
+          {navItem('today', 'Today', <Sun size={18} />)}
           {navItem('timetable', 'Timetable', <Calendar size={18} />)}
           {navItem(
             'outstanding',
@@ -218,6 +220,18 @@ export function App() {
       </aside>
 
       <main className="main">
+        {view === 'today' && (
+          <TodayView
+            semester={semester}
+            focus={focus}
+            clearFocus={clearFocus}
+            showWeek={(w) => {
+              setWeekStart(w);
+              setView('timetable');
+            }}
+            showOutstanding={() => setView('outstanding')}
+          />
+        )}
         {view === 'timetable' && weekStart && (
           <TimetableView semester={semester} weekStart={weekStart} setWeekStart={setWeekStart} focus={focus} clearFocus={clearFocus} />
         )}

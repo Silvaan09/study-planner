@@ -995,6 +995,7 @@ textarea.input {
 }
 .timetable {
   --gutter: 58px;
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1083,12 +1084,9 @@ textarea.input {
   overflow-y: auto;
   position: relative;
 }
-.tt-planned .tt-cell {
-  min-height: 52px;
-  background: var(--surface-2);
-}
-.tt-due .tt-cell {
-  min-height: 34px;
+/* Both bands have the same height while empty; they grow with their cards. */
+.tt-band .tt-cell {
+  min-height: 44px;
   background: var(--surface-2);
 }
 /* Saturday and Sunday share one tint to mark the weekend. */
@@ -1118,6 +1116,59 @@ textarea.input {
 }
 .is-dragging .drop-no.drop-hover {
   box-shadow: inset 0 0 0 2px var(--danger);
+}
+/* Edge zones while dragging: holding a card there switches to the previous / next week. */
+.tt-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 20;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--text-3);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  transition: background-color 0.15s, color 0.15s;
+}
+.tt-edge.prev {
+  left: 0;
+  width: var(--gutter);
+  border-right: 1px dashed color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.tt-edge.next {
+  right: 0;
+  width: 32px;
+  border-left: 1px dashed color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.tt-edge.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+.tt-edge svg {
+  position: relative;
+}
+/* Fills up until the week switches (restarts for every further week). */
+.tt-edge-fill {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  transform-origin: bottom;
+  animation: tt-edge-fill 0.7s linear both;
+}
+@keyframes tt-edge-fill {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tt-edge-fill {
+    animation: none;
+  }
 }
 .drop-note {
   font-size: 11px;
@@ -1181,7 +1232,7 @@ textarea.input {
   flex: none;
   margin-top: 2px;
 }
-/* Flag on a deadline card: checks the exercise off. */
+/* Flag on a deadline card: marks the exercise handed in. */
 .due-check {
   flex: none;
   display: grid;
@@ -1259,9 +1310,22 @@ textarea.input {
   border-radius: 7px 0 0 7px;
   background: var(--c);
 }
-.ex-chip.due.status-completed {
+.ex-chip.due.handed-in {
   background: var(--surface-2);
   border-color: var(--border);
+  color: var(--success);
+}
+.ex-chip.due.handed-in .ex-title {
+  text-decoration: line-through;
+  color: var(--text-3);
+}
+/* Work done, not handed in yet. */
+.ex-chip.due.ready {
+  border-color: color-mix(in srgb, var(--success) 60%, var(--border));
+  background: var(--success-soft);
+  color: var(--success);
+}
+.ex-chip.due.ready .ex-meta {
   color: var(--success);
 }
 .ex-chip.due.overdue {
@@ -1610,6 +1674,11 @@ textarea.input {
   border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
   background: var(--accent-soft);
 }
+.status-select.status-completed {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 50%, var(--border));
+  background: var(--success-soft);
+}
 .badge {
   flex: none;
   display: inline-flex;
@@ -1762,10 +1831,11 @@ button.row-item:hover {
 .row-exercise.status-in_progress > svg {
   color: var(--accent);
 }
-.row-exercise.status-completed > svg {
+.row-exercise.status-completed > svg,
+.row-exercise.status-handed_in > svg {
   color: var(--success);
 }
-.row-exercise.status-completed .row-title {
+.row-exercise.status-handed_in .row-title {
   color: var(--text-3);
   text-decoration: line-through;
 }
@@ -1964,7 +2034,8 @@ button.row-item:hover {
 .seg.status-in_progress.active {
   color: var(--accent);
 }
-.seg.status-completed.active {
+.seg.status-completed.active,
+.seg.status-handed_in.active {
   color: var(--success);
 }
 .series-banner {
@@ -2359,5 +2430,568 @@ button.row-item:hover {
     animation:
       fade 0.3s ease-out both,
       celebrate-out 0.4s ease-in var(--stay) forwards;
+  }
+}
+
+/* ------------------------------------------------------------------ checklists */
+.cl-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cl-progress.complete {
+  color: var(--success);
+}
+.cl-bar {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.cl-bar > span {
+  display: block;
+  height: 100%;
+  background: color-mix(in srgb, var(--c, var(--accent)) 80%, var(--text));
+  border-radius: 2px;
+  transition: width 0.2s ease-out;
+}
+.cl-progress.complete .cl-bar > span {
+  background: var(--success);
+}
+/* Progress button on a planned timetable card: opens the checklist popup. */
+.cl-btn {
+  align-self: flex-start;
+  margin: 3px 0 0 -3px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+.cl-btn:hover,
+.cl-btn[aria-expanded="true"] {
+  background: var(--surface-3);
+}
+.cl-btn:hover .cl-progress {
+  color: var(--text);
+}
+.cl-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cl-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cl-item:hover {
+  background: var(--surface-2);
+}
+.cl-box {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  padding: 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--on-accent);
+  cursor: pointer;
+}
+.cl-item:hover .cl-box,
+button.cl-box:hover {
+  border-color: var(--success);
+}
+.cl-item.done .cl-box,
+.cl-edit-row.done .cl-box {
+  background: var(--success);
+  border-color: var(--success);
+}
+.cl-text {
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+.cl-item.done .cl-text {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+.cl-popover {
+  position: fixed;
+  z-index: 220;
+  width: 280px;
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+  padding: 10px 8px 6px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: pop 0.1s ease-out;
+}
+.cl-pop-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 6px;
+  font-size: 13px;
+}
+.cl-pop-head strong {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.cl-popover > .btn {
+  align-self: flex-start;
+}
+.cl-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cl-editor .planned-actions {
+  align-items: center;
+  gap: 8px;
+}
+.cl-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cl-edit-row .cl-box {
+  margin-top: 0;
+}
+.cl-edit-row .input {
+  flex: 1;
+  min-width: 0;
+}
+.cl-edit-row.done .input {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+
+/* ------------------------------------------------------------------ exams */
+.row-exam {
+  align-items: flex-start;
+}
+.row-exam > svg {
+  flex: none;
+  margin-top: 2px;
+  color: color-mix(in srgb, var(--c) 75%, var(--text));
+}
+.row-exam:hover .row-title {
+  color: var(--accent);
+}
+.row-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.row-exam.past .row-title {
+  color: var(--text-3);
+}
+.exam-countdown {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 20px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.exam-countdown.soon {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.exam-countdown.today {
+  background: var(--danger);
+  color: #fff;
+}
+.exam-countdown.past {
+  background: var(--surface-3);
+  color: var(--text-3);
+}
+/* Exam card in the timetable's "Due" row. */
+.ex-chip.exam {
+  padding: 4px 7px;
+  border: 1px solid color-mix(in srgb, var(--c) 60%, var(--border));
+  background: color-mix(in srgb, var(--c) 22%, var(--surface));
+  box-shadow: var(--shadow-sm);
+}
+.ex-chip.exam:hover {
+  background: color-mix(in srgb, var(--c) 30%, var(--surface));
+}
+.ex-chip.exam .exam-icon {
+  flex: none;
+  margin-top: 1px;
+  color: color-mix(in srgb, var(--c) 60%, var(--text));
+}
+.ex-chip.exam .ex-meta {
+  color: var(--text-2);
+}
+.ex-chip.exam.past {
+  opacity: 0.6;
+}
+.key-exam {
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, var(--border));
+}
+
+/* ------------------------------------------------------------------ today */
+.today-view .stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  max-width: 1400px;
+}
+.stat.clickable {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.stat.clickable:hover {
+  border-color: var(--border-strong);
+}
+.stat.stat-danger.clickable:hover {
+  border-color: var(--danger);
+}
+.stat > div {
+  min-width: 0;
+  flex: 1;
+}
+.stat-streak.on {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+  background: linear-gradient(135deg, var(--warn-soft), var(--surface) 70%);
+}
+.stat-streak.on > svg {
+  color: var(--warn);
+}
+.stat-bar {
+  display: block;
+  height: 5px;
+  margin-top: 6px;
+  border-radius: 3px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.stat-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--success);
+  transition: width 0.3s ease-out;
+}
+.today-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 16px;
+  padding: 0 24px;
+  max-width: 1400px;
+  align-items: start;
+}
+.today-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  padding: 12px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  margin-bottom: 4px;
+  min-height: 26px;
+}
+.card-head h2 {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+.card-danger {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+.card-danger .card-head,
+.card-danger .card-head h2 {
+  color: var(--danger);
+}
+.card-empty {
+  margin: 2px 0 6px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+.today-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 8px 8px 10px;
+  border: 0;
+  border-left: 3px solid var(--c, var(--border-strong));
+  border-radius: 4px 8px 8px 4px;
+  background: none;
+  text-align: left;
+}
+button.today-row {
+  cursor: pointer;
+}
+.today-row:hover {
+  background: var(--surface-2);
+}
+.today-time {
+  flex: none;
+  width: 44px;
+  display: flex;
+  flex-direction: column;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.today-time small {
+  font-weight: 400;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.today-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.today-main.clickable {
+  cursor: pointer;
+}
+.today-main.clickable:hover .today-title {
+  color: var(--accent);
+}
+.today-title {
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+.today-title svg {
+  vertical-align: -2px;
+  color: color-mix(in srgb, var(--c) 70%, var(--text));
+}
+.today-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.live-tag {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.lecture-row.live {
+  background: color-mix(in srgb, var(--c) 10%, transparent);
+}
+.lecture-row.done .today-title {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+.lecture-row.missed .today-meta {
+  color: var(--warn);
+}
+.check-btn.checked {
+  border-color: var(--success);
+  background: var(--success);
+  color: var(--on-accent);
+}
+.check-btn.checked:hover {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.today-task.status-completed .today-title {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+.today-task .status-btn,
+.compact-row .status-btn {
+  color: color-mix(in srgb, var(--c) 80%, var(--text));
+}
+.today-task.status-completed .status-btn,
+.compact-row.status-completed .status-btn {
+  color: var(--success);
+}
+.today-checklist {
+  padding: 0 0 6px 44px;
+}
+.exam-row .today-time {
+  color: var(--danger);
+}
+.up-next {
+  position: relative;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--c) 45%, var(--border));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--c) 22%, var(--surface)), var(--surface) 75%);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.up-next-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: color-mix(in srgb, var(--c) 65%, var(--text));
+}
+.up-next-title {
+  margin-top: 6px;
+  font-size: 20px;
+  font-weight: 700;
+  font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  overflow-wrap: break-word;
+}
+.up-next-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.up-next-meta .subject-dot {
+  background: var(--c);
+}
+.up-next-when {
+  margin-top: 10px;
+  font-weight: 600;
+  color: var(--text);
+}
+.up-next-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: color-mix(in srgb, var(--c) 18%, transparent);
+}
+.up-next-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--c);
+}
+.missed-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  background: none;
+  font-size: 13px;
+  color: var(--warn);
+  cursor: pointer;
+  text-align: left;
+}
+.missed-link:hover {
+  background: var(--warn-soft);
+}
+.exam-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.exam-tile:hover {
+  background: var(--surface-2);
+}
+.exam-tile:hover .today-title {
+  color: var(--accent);
+}
+.exam-days {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--c) 18%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--c) 45%, var(--border));
+}
+.exam-days strong {
+  font-size: 20px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.exam-days small {
+  font-size: 10.5px;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.exam-days.soon {
+  border-color: var(--warn);
+}
+.exam-days.today {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.exam-days.today small {
+  color: #fff;
+}
+@media (max-width: 1180px) {
+  .today-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .today-view .stat-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

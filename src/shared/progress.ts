@@ -1,5 +1,5 @@
 import { addDays, startOfWeek, type ISODate } from './dates';
-import type { ExerciseStatus, WeekData, WeekProgress } from './types';
+import type { ExerciseStatus, Streak, WeekData, WeekProgress } from './types';
 
 export type { WeekProgress };
 
@@ -57,4 +57,33 @@ export function biggerCelebration(a: CelebrationKind | null, b: CelebrationKind 
 /** Weeks whose exercise count includes this exercise (the weeks of its planned dates). */
 export function exerciseWeeks(plannedDates: ISODate[]): ISODate[] {
   return [...new Set(plannedDates.map(startOfWeek))];
+}
+
+/** What was scheduled on one day (lecture occurrences + exercise planned dates) and how much of it is completed. */
+export interface DayTally {
+  total: number;
+  done: number;
+}
+
+/**
+ * Streak of days "on track": days on which every lecture was completed and every exercise planned that day is
+ * completed. Days with nothing scheduled are skipped (they neither count nor break the streak). Today counts once
+ * everything in it is done; while it is still open it doesn't break the streak.
+ */
+export function computeStreak(days: ReadonlyMap<ISODate, DayTally>, from: ISODate, today: ISODate): Streak {
+  let run = 0;
+  let best = 0;
+  let todayState: Streak['today'] = 'empty';
+  for (let d = from; d <= today; d = addDays(d, 1)) {
+    const t = days.get(d);
+    if (!t || t.total === 0) continue;
+    const complete = t.done >= t.total;
+    if (d === today) {
+      todayState = complete ? 'done' : 'open';
+      if (!complete) continue;
+    }
+    run = complete ? run + 1 : 0;
+    best = Math.max(best, run);
+  }
+  return { current: run, best, today: todayState };
 }

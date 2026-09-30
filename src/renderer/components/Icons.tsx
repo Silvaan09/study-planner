@@ -138,11 +138,51 @@ export const Grip = (p: P) => (
   </Svg>
 );
 
-/** Three-state exercise status glyph: empty ring, half-filled, checked. */
-export function StatusIcon({ status, size = 16 }: { status: 'not_started' | 'in_progress' | 'completed'; size?: number }) {
+export const GraduationCap = (p: P) => (
+  <Svg {...p}>
+    <path d="M22 10 12 5 2 10l10 5 10-5Z" />
+    <path d="M6 12v5c3 3 9 3 12 0v-5M22 10v6" />
+  </Svg>
+);
+export const Flame = (p: P) => (
+  <Svg {...p}>
+    <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
+  </Svg>
+);
+export const Sun = (p: P) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+  </Svg>
+);
+export const ListChecks = (p: P) => (
+  <Svg {...p}>
+    <path d="m3 7 2 2 4-4M3 17l2 2 4-4M13 6h8M13 12h8M13 18h8" />
+  </Svg>
+);
+export const MapPin = (p: P) => (
+  <Svg {...p}>
+    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+    <circle cx="12" cy="10" r="3" />
+  </Svg>
+);
+export const Clock = (p: P) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 6v6l4 2" />
+  </Svg>
+);
+
+/** Exercise status glyph: empty ring, half-filled, checked (done), flag (handed in). */
+export function StatusIcon({ status, size = 16 }: { status: 'not_started' | 'in_progress' | 'completed' | 'handed_in'; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 20 20" aria-hidden="true">
-      {status === 'completed' ? (
+      {status === 'handed_in' ? (
+        <>
+          <circle cx="10" cy="10" r="9" fill="currentColor" />
+          <path d="M7 15V5.5h6l-1.5 2.5 1.5 2.5H7" fill="none" stroke="var(--on-accent, #fff)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      ) : status === 'completed' ? (
         <>
           <circle cx="10" cy="10" r="9" fill="currentColor" />
           <path d="m6 10.5 2.6 2.5L14 7.5" fill="none" stroke="var(--on-accent, #fff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { openDatabase } from '../src/main/db/database';
 import { StudyService, UserError } from '../src/main/service';
 import type { Semester, Subject } from '../src/shared/types';
-import { biggerCelebration, celebrationFor, exerciseWeeks, weekProgress, weekStatus } from '../src/shared/progress';
+import { biggerCelebration, celebrationFor, computeStreak, exerciseWeeks, weekProgress, weekStatus } from '../src/shared/progress';
 
 let dir: string;
 let svc: StudyService;
@@ -194,17 +194,71 @@ describe('exercises', () => {
     expect(o.exercises[1]).toMatchObject({ seriesId: null, plannedDates: ['2026-09-20'] });
   });
 
-  it('outstanding list excludes completed and flags overdue exercises', () => {
+  it('outstanding list excludes handed-in exercises and flags overdue ones', () => {
     const [a] = svc.createExercise({ subjectId: math.id, title: 'A', description: '', plannedDates: ['2026-09-15'], deadlineDate: '2026-09-18' });
     const [b] = svc.createExercise({ subjectId: math.id, title: 'B', description: '', plannedDates: ['2026-09-16'], deadlineDate: '2026-10-18' });
     const [c] = svc.createExercise({ subjectId: math.id, title: 'C', description: '', plannedDates: ['2026-09-17'], deadlineDate: '2026-10-18' });
+    const [d] = svc.createExercise({ subjectId: math.id, title: 'D', description: '', plannedDates: ['2026-09-17'], deadlineDate: '2026-10-18' });
     svc.setExerciseStatus(b.id, 'in_progress');
-    svc.setExerciseStatus(c.id, 'completed');
+    svc.setExerciseStatus(c.id, 'completed'); // done, but not handed in yet
+    svc.setExerciseHandedIn(d.id, true);
     const out = svc.getOutstanding(sem.id, '2026-09-27');
     expect(out.items.map((i) => (i.kind === 'exercise' ? [i.exercise.id, i.overdue] : null))).toEqual([
       [a.id, true],
       [b.id, false],
+      [c.id, false],
     ]);
+  });
+});
+
+describe('handing in', () => {
+  const create = (extra: object = {}) =>
+    svc.createExercise({ subjectId: math.id, title: 'Sheet', description: '', plannedDates: ['2026-09-22'], deadlineDate: '2026-09-25', ...extra });
+
+  it('keeps the work status and handing in apart', () => {
+    const [e] = create();
+    expect(e).toMatchObject({ status: 'not_started', handedIn: false });
+    // Working through it on the planned day doesn't hand it in: still due, then overdue.
+    svc.setExerciseStatus(e.id, 'completed');
+    expect(svc.getExercise(e.id)).toMatchObject({ status: 'completed', handedIn: false });
+    expect(svc.getToday(sem.id, '2026-09-23').dueSoon.map((x) => x.id)).toEqual([e.id]);
+    expect(svc.getToday(sem.id, '2026-09-26').overdue.map((x) => x.id)).toEqual([e.id]);
+    // ...but the planned day and its week count as done.
+    expect(weekProgress(svc.getWeek(sem.id, '2026-09-21'))).toMatchObject({ exercises: 1, exercisesDone: 1 });
+
+    svc.setExerciseHandedIn(e.id, true);
+    expect(svc.getToday(sem.id, '2026-09-26').overdue).toEqual([]);
+    // Taking it back keeps the work done; going back to a lower status clears the hand-in.
+    svc.setExerciseHandedIn(e.id, false);
+    expect(svc.getExercise(e.id)).toMatchObject({ status: 'completed', handedIn: false });
+    svc.setExerciseHandedIn(e.id, true);
+    svc.setExerciseStatus(e.id, 'completed');
+    expect(svc.getExercise(e.id).handedIn).toBe(true);
+    svc.setExerciseStatus(e.id, 'in_progress');
+    expect(svc.getExercise(e.id)).toMatchObject({ status: 'in_progress', handedIn: false });
+  });
+
+  it('handing in marks the work done too', () => {
+    const [e] = create();
+    svc.setExerciseHandedIn(e.id, true);
+    expect(svc.getExercise(e.id)).toMatchObject({ status: 'completed', handedIn: true });
+    const [f] = create({ handedIn: true });
+    expect(f).toMatchObject({ status: 'completed', handedIn: true });
+  });
+
+  it('edits hand-in and status of this occurrence only, keeping them consistent', () => {
+    const list = create({ recurrence: { intervalWeeks: 1, count: 3, firstNumber: 1 }, handedIn: true });
+    expect(list.map((x) => x.handedIn)).toEqual([true, false, false]);
+    const [, second] = list;
+    svc.updateExercise({ id: second.id, scope: 'all', changes: { handedIn: true, description: 'x' } });
+    expect(svc.getExercise(second.id)).toMatchObject({ status: 'completed', handedIn: true });
+    expect(svc.getExercise(list[2].id)).toMatchObject({ status: 'not_started', handedIn: false, description: 'x' });
+    svc.updateExercise({ id: second.id, scope: 'this', changes: { status: 'in_progress' } });
+    expect(svc.getExercise(second.id)).toMatchObject({ status: 'in_progress', handedIn: false });
+    svc.updateExercise({ id: second.id, scope: 'this', changes: { status: 'completed', handedIn: false } });
+    expect(svc.getExercise(second.id)).toMatchObject({ status: 'completed', handedIn: false });
+    expect(svc.getExercise(second.id).overrides).toEqual([]);
+    expect(() => svc.setExerciseHandedIn(second.id, 'yes' as never)).toThrow(UserError);
   });
 });
 
@@ -294,6 +348,59 @@ describe('multiple planned dates', () => {
   });
 });
 
+describe('schema v3', () => {
+  it('migrating a v2 database keeps exercises and gives them an empty checklist', async () => {
+    close();
+    const { migrations } = await import('../src/main/db/migrations');
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-v2-'));
+    const v2 = openDatabase(dir2, { migrations: migrations.slice(0, 2) });
+    const t = '2026-01-01T00:00:00.000Z';
+    v2.db.exec(`INSERT INTO semesters (id, name, start_date, end_date, created_at, updated_at) VALUES (1, 'S', '2026-09-14', '2026-12-18', '${t}', '${t}');
+      INSERT INTO subjects (id, semester_id, name, color, created_at, updated_at) VALUES (1, 1, 'M', '#3366ff', '${t}', '${t}');
+      INSERT INTO exercises (id, subject_id, title, planned_date, deadline_date, status, created_at, updated_at) VALUES (7, 1, 'Old', '2026-09-16', '2026-09-18', 'in_progress', '${t}', '${t}');
+      INSERT INTO exercise_plan_dates (exercise_id, date) VALUES (7, '2026-09-16'), (7, '2026-09-17');`);
+    v2.db.close();
+    const v3 = openDatabase(dir2);
+    close = () => {
+      v3.db.close();
+      fs.rmSync(dir2, { recursive: true, force: true });
+    };
+    expect(v3.schemaVersion).toBe(migrations.length);
+    expect(v3.backupsCreated).toHaveLength(1);
+    const s3 = new StudyService(v3.db);
+    expect(s3.getExercise(7)).toMatchObject({ title: 'Old', status: 'in_progress', plannedDates: ['2026-09-16', '2026-09-17'], checklist: [] });
+    expect(s3.subjectOverview(1)[0].exams).toEqual([]);
+  });
+});
+
+describe('schema v4', () => {
+  it('migrating a v3 database counts completed exercises as handed in', async () => {
+    close();
+    const { migrations } = await import('../src/main/db/migrations');
+    const dir3 = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-v3-'));
+    const v3 = openDatabase(dir3, { migrations: migrations.slice(0, 3) });
+    const t = '2026-01-01T00:00:00.000Z';
+    v3.db.exec(`INSERT INTO semesters (id, name, start_date, end_date, created_at, updated_at) VALUES (1, 'S', '2026-09-14', '2026-12-18', '${t}', '${t}');
+      INSERT INTO subjects (id, semester_id, name, color, created_at, updated_at) VALUES (1, 1, 'M', '#3366ff', '${t}', '${t}');
+      INSERT INTO exercises (id, subject_id, title, planned_date, deadline_date, status, created_at, updated_at) VALUES
+        (7, 1, 'Done', '2026-09-16', '2026-09-18', 'completed', '${t}', '${t}'),
+        (8, 1, 'Open', '2026-09-16', '2026-09-18', 'in_progress', '${t}', '${t}');
+      INSERT INTO exercise_plan_dates (exercise_id, date) VALUES (7, '2026-09-16'), (8, '2026-09-16');
+      INSERT INTO exercise_checklist_items (exercise_id, position, text, done) VALUES (7, 0, 'Step', 1);`);
+    v3.db.close();
+    const v4 = openDatabase(dir3);
+    close = () => {
+      v4.db.close();
+      fs.rmSync(dir3, { recursive: true, force: true });
+    };
+    expect(v4.schemaVersion).toBe(4);
+    expect(v4.backupsCreated).toHaveLength(1);
+    const s4 = new StudyService(v4.db);
+    expect(s4.getExercise(7)).toMatchObject({ title: 'Done', status: 'completed', handedIn: true, checklist: [{ text: 'Step', done: true }] });
+    expect(s4.getExercise(8)).toMatchObject({ title: 'Open', status: 'in_progress', handedIn: false });
+  });
+});
+
 describe('week progress and celebrations', () => {
   const W = '2026-09-21';
   const progress = () => weekProgress(svc.getWeek(sem.id, W));
@@ -359,6 +466,170 @@ describe('week progress and celebrations', () => {
     expect(biggerCelebration('lectures', 'everything')).toBe('everything');
     expect(biggerCelebration('everything', 'exercises')).toBe('everything');
     expect(biggerCelebration(null, 'lectures')).toBe('lectures');
+  });
+});
+
+describe('exams', () => {
+  const exam = (over: Partial<Parameters<StudyService['createExam']>[0]> = {}) =>
+    svc.createExam({ subjectId: math.id, kind: 'midterm', title: '', date: '2026-11-04', startTime: '10:15', endTime: '12:00', location: 'HG F1', notes: '', ...over });
+
+  it('creates, validates, lists by subject and shows in the week', () => {
+    const e = exam();
+    expect(e).toMatchObject({ kind: 'midterm', title: '', startTime: '10:15', endTime: '12:00', location: 'HG F1' });
+    const noTime = exam({ kind: 'final', title: 'Final exam', date: '2027-01-20', startTime: null, endTime: null });
+    expect(noTime.startTime).toBeNull();
+    expect(() => exam({ startTime: '12:00', endTime: '10:00' })).toThrow(/end after it starts/);
+    expect(() => exam({ startTime: null, endTime: '10:00' })).toThrow(/start time/);
+    expect(() => exam({ kind: 'oral' as never })).toThrow(UserError);
+    expect(svc.subjectOverview(sem.id)[0].exams.map((x) => x.id)).toEqual([e.id, noTime.id]);
+    expect(svc.getWeek(sem.id, '2026-11-02').exams.map((x) => x.id)).toEqual([e.id]);
+    expect(svc.getWeek(sem.id, '2026-11-09').exams).toHaveLength(0);
+    expect(svc.updateExam(e.id, { ...e, title: 'Midterm 1', date: '2026-11-05' })).toMatchObject({ title: 'Midterm 1', date: '2026-11-05' });
+  });
+
+  it('goes to the trash on its own or with its subject', () => {
+    const e = exam();
+    const del = svc.deleteExam(e.id);
+    expect(svc.listTrash()[0]).toMatchObject({ kind: 'exam', label: 'Midterm (Mathematics)', itemCount: 1 });
+    expect(() => svc.getExam(e.id)).toThrow(/no longer exists/);
+    svc.restoreTrash(del.trashId);
+    const subj = svc.deleteSubject(math.id);
+    expect(() => svc.getExam(e.id)).toThrow(UserError);
+    svc.restoreTrash(subj.trashId);
+    expect(svc.getExam(e.id).id).toBe(e.id);
+    svc.purgeTrash(svc.deleteSubject(math.id).trashId);
+    expect(svc.listTrash()).toHaveLength(0);
+  });
+});
+
+describe('checklists', () => {
+  const steps = (...texts: string[]) => texts.map((text) => ({ text, done: false }));
+  const texts = (id: number) => svc.getExercise(id).checklist.map((c) => `${c.text}${c.done ? ' (done)' : ''}`);
+
+  it('stores steps in order, ticks them and starts the exercise', () => {
+    const [e] = svc.createExercise({
+      subjectId: math.id, title: 'Lab Report', description: '', plannedDates: ['2026-09-15'], deadlineDate: '2026-09-18',
+      checklist: steps('Measure', 'Plot', 'Write up'),
+    });
+    expect(e.checklist.map((c) => c.text)).toEqual(['Measure', 'Plot', 'Write up']);
+    const after = svc.setChecklistItemDone(e.checklist[1].id, true);
+    expect(after.status).toBe('in_progress');
+    expect(texts(e.id)).toEqual(['Measure', 'Plot (done)', 'Write up']);
+    expect(() =>
+      svc.createExercise({ subjectId: math.id, title: 'X', description: '', plannedDates: ['2026-09-15'], deadlineDate: '2026-09-18', checklist: steps('  ') }),
+    ).toThrow(/empty/);
+  });
+
+  it('copies steps through a series: new occurrences, series edits keep ticks, ticking is not an override', () => {
+    const list = svc.createExercise({
+      subjectId: math.id, title: 'Report', description: '', plannedDates: ['2026-09-15'], deadlineDate: '2026-09-18',
+      checklist: [{ text: 'Draft', done: true }, { text: 'Submit', done: false }],
+      recurrence: { intervalWeeks: 1, count: 3, firstNumber: 1 },
+    });
+    expect(list.map((e) => texts(e.id))).toEqual([['Draft (done)', 'Submit'], ['Draft', 'Submit'], ['Draft', 'Submit']]);
+    // Ticking in the dialog (scope 'this') is progress, not an individual change.
+    svc.updateExercise({ id: list[1].id, scope: 'this', changes: { checklist: [{ text: 'Draft', done: true }, { text: 'Submit', done: false }] } });
+    expect(svc.getExercise(list[1].id).overrides).toEqual([]);
+    // Adding a step to the whole series keeps each occurrence's ticks.
+    svc.updateExercise({
+      id: list[0].id,
+      scope: 'all',
+      changes: { checklist: [{ text: 'Draft', done: true }, { text: 'Review', done: false }, { text: 'Submit', done: true }] },
+    });
+    expect(list.map((e) => texts(e.id))).toEqual([
+      ['Draft (done)', 'Review', 'Submit (done)'],
+      ['Draft (done)', 'Review', 'Submit'],
+      ['Draft', 'Review', 'Submit'],
+    ]);
+    expect(svc.extendSeries(list[0].seriesId!, 1)[0].checklist.map((c) => [c.text, c.done])).toEqual([
+      ['Draft', false],
+      ['Review', false],
+      ['Submit', false],
+    ]);
+  });
+
+  it('asks before replacing individually changed steps', () => {
+    const list = svc.createExercise({
+      subjectId: math.id, title: 'Report', description: '', plannedDates: ['2026-09-15'], deadlineDate: '2026-09-18',
+      checklist: steps('A'), recurrence: { intervalWeeks: 1, count: 2, firstNumber: 1 },
+    });
+    svc.updateExercise({ id: list[1].id, scope: 'this', changes: { checklist: steps('A', 'Extra') } });
+    expect(svc.getExercise(list[1].id).overrides).toEqual(['checklist']);
+    const res = svc.updateExercise({ id: list[0].id, scope: 'all', changes: { checklist: steps('B') } });
+    expect(res).toMatchObject({ status: 'conflicts', conflicts: [{ id: list[1].id, fields: ['checklist'] }] });
+    svc.updateExercise({ id: list[0].id, scope: 'all', changes: { checklist: steps('B') }, overridePolicy: 'keep' });
+    expect([texts(list[0].id), texts(list[1].id)]).toEqual([['B'], ['A', 'Extra']]);
+  });
+});
+
+describe('today', () => {
+  it('collects today, what is next, overdue, due soon and exams', () => {
+    const l = svc.createLecture({ subjectId: math.id, title: 'LA', weekday: 2, startTime: '10:00', endTime: '12:00' });
+    svc.createLecture({ subjectId: math.id, title: 'Analysis', weekday: 3, startTime: '08:00', endTime: '10:00' });
+    const [late] = svc.createExercise({ subjectId: math.id, title: 'Late', description: '', plannedDates: ['2026-09-22'], deadlineDate: '2026-09-25' });
+    const [now] = svc.createExercise({ subjectId: math.id, title: 'Now', description: '', plannedDates: ['2026-09-29'], deadlineDate: '2026-10-02' });
+    svc.createExercise({ subjectId: math.id, title: 'Later', description: '', plannedDates: ['2026-10-10'], deadlineDate: '2026-10-20' });
+    const ex = svc.createExam({ subjectId: math.id, kind: 'midterm', title: '', date: '2026-11-04', startTime: null, endTime: null, location: '', notes: '' });
+    svc.createExam({ subjectId: math.id, kind: 'other', title: 'Past quiz', date: '2026-09-20', startTime: null, endTime: null, location: '', notes: '' });
+    svc.setLectureCompleted(l.id, '2026-09-14', true);
+
+    const d = svc.getToday(sem.id, '2026-09-29'); // a Tuesday
+    expect(d.lectures.map((o) => o.title)).toEqual(['LA']);
+    expect(d.upcomingLectures[0]).toMatchObject({ title: 'Analysis', date: '2026-09-30' });
+    expect(d.planned.map((e) => e.id)).toEqual([now.id]);
+    expect(d.overdue.map((e) => e.id)).toEqual([late.id]);
+    expect(d.dueSoon.map((e) => e.id)).toEqual([now.id]);
+    expect(d.exams.map((e) => e.id)).toEqual([ex.id]);
+    // Missed: LA on 22 Sep, Analysis on 16 and 23 Sep.
+    expect(d.missedLectures.map((o) => o.date)).toEqual(['2026-09-16', '2026-09-22', '2026-09-23']);
+  });
+
+  it('counts the streak of days with everything done', () => {
+    const l = svc.createLecture({ subjectId: math.id, title: 'LA', weekday: 1, startTime: '10:00', endTime: '12:00' });
+    const w = svc.createLecture({ subjectId: math.id, title: 'An', weekday: 3, startTime: '10:00', endTime: '12:00' });
+    for (const week of ['2026-09-14', '2026-09-21', '2026-09-28']) svc.setLectureCompleted(l.id, week, true);
+    svc.setLectureCompleted(w.id, '2026-09-21', true);
+    // Mon 14 done, Wed 16 missed, Mon 21 done, Wed 23 done, Mon 28 done; today Tue 29 has nothing.
+    expect(svc.getToday(sem.id, '2026-09-29').streak).toEqual({ current: 3, best: 3, today: 'empty' });
+    // Today (Wed 30) is still open: it doesn't break the streak.
+    expect(svc.getToday(sem.id, '2026-09-30').streak).toEqual({ current: 3, best: 3, today: 'open' });
+    svc.setLectureCompleted(w.id, '2026-09-28', true);
+    expect(svc.getToday(sem.id, '2026-09-30').streak).toEqual({ current: 4, best: 4, today: 'done' });
+    // An exercise planned on a day counts for that day: Mon 21 is no longer complete.
+    svc.createExercise({ subjectId: math.id, title: 'PS', description: '', plannedDates: ['2026-09-21'], deadlineDate: '2026-10-02' });
+    expect(svc.getToday(sem.id, '2026-09-29').streak).toEqual({ current: 2, best: 2, today: 'empty' });
+  });
+
+  it('keeps the streak while today is unfinished and only loses it for an unfinished earlier day', () => {
+    const l = svc.createLecture({ subjectId: math.id, title: 'LA', weekday: 1, startTime: '10:00', endTime: '12:00' });
+    // Mon 21, Mon 28 done; nothing else before today (Wed 30).
+    for (const week of ['2026-09-21', '2026-09-28']) svc.setLectureCompleted(l.id, week, true);
+    const [a] = svc.createExercise({ subjectId: math.id, title: 'A', description: '', plannedDates: ['2026-09-30'], deadlineDate: '2026-10-02' });
+    const [b] = svc.createExercise({ subjectId: math.id, title: 'B', description: '', plannedDates: ['2026-09-30'], deadlineDate: '2026-10-02' });
+    // Nothing of today done yet, then part of it (one done, one in progress): the streak stays.
+    expect(svc.getToday(sem.id, '2026-09-30').streak).toEqual({ current: 2, best: 2, today: 'open' });
+    svc.setExerciseStatus(a.id, 'completed');
+    svc.setExerciseStatus(b.id, 'in_progress');
+    expect(svc.getToday(sem.id, '2026-09-30').streak).toEqual({ current: 2, best: 2, today: 'open' });
+    // The next day, today's leftovers break it.
+    expect(svc.getToday(sem.id, '2026-10-01').streak).toEqual({ current: 0, best: 2, today: 'empty' });
+    // An unfinished exercise on an earlier day (Tue 29) breaks it right away.
+    const [c] = svc.createExercise({ subjectId: math.id, title: 'C', description: '', plannedDates: ['2026-09-29'], deadlineDate: '2026-10-02' });
+    expect(svc.getToday(sem.id, '2026-09-30').streak).toEqual({ current: 0, best: 2, today: 'open' });
+    // Finishing everything repairs both days.
+    svc.setExerciseStatus(c.id, 'completed');
+    svc.setExerciseStatus(b.id, 'completed');
+    expect(svc.getToday(sem.id, '2026-09-30').streak).toEqual({ current: 4, best: 4, today: 'done' });
+  });
+
+  it('computeStreak skips empty days and keeps the best run', () => {
+    const days = new Map([
+      ['2026-09-01', { total: 2, done: 2 }],
+      ['2026-09-02', { total: 1, done: 1 }],
+      ['2026-09-04', { total: 1, done: 0 }],
+      ['2026-09-05', { total: 3, done: 3 }],
+    ]);
+    expect(computeStreak(days, '2026-09-01', '2026-09-06')).toEqual({ current: 1, best: 2, today: 'empty' });
   });
 });
 

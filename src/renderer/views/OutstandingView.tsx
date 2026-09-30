@@ -2,12 +2,12 @@ import { useMemo, type CSSProperties } from 'react';
 import { api } from '../api';
 import { useLoad, useUi } from '../ui';
 import { addDays, diffDays, formatDate, startOfWeek, todayISO, type ISODate } from '../../shared/dates';
-import { EXERCISE_STATUS_LABEL, type ExerciseStatus, type OutstandingItem, type Semester, type Subject } from '../../shared/types';
+import { EXERCISE_STAGES, EXERCISE_STAGE_LABEL, exerciseStage, type ExerciseStage, type OutstandingItem, type Semester, type Subject } from '../../shared/types';
 import { ExerciseDialog } from '../dialogs';
-import { useWeekCompletion } from '../actions';
-import { exerciseWeeks } from '../../shared/progress';
+import { useExerciseProgress, useWeekCompletion } from '../actions';
 import { Alert, Calendar, Check, Flag, StatusIcon } from '../components/Icons';
 import { FocusPill } from '../components/FocusPill';
+import { ChecklistProgress } from '../components/Checklist';
 
 function dayHeading(date: ISODate, today: ISODate): string {
   const d = diffDays(today, date);
@@ -36,6 +36,7 @@ export function OutstandingView({
 }) {
   const ui = useUi();
   const completing = useWeekCompletion(semester.id);
+  const progress = useExerciseProgress(semester.id);
   const today = todayISO();
   const { data } = useLoad(() => api.getOutstanding(semester.id, today), [semester.id, today]);
   const subjects = data?.subjects ?? [];
@@ -77,23 +78,12 @@ export function OutstandingView({
     });
   };
 
-  const setStatus = (id: number, title: string, plannedDates: ISODate[], prev: ExerciseStatus, status: ExerciseStatus) =>
-    void ui.run(async () => {
-      await completing(status === 'completed' ? exerciseWeeks(plannedDates) : [], () => api.setExerciseStatus(id, status));
-      if (status === 'completed') {
-        ui.toast(`"${title}" completed`, {
-          kind: 'success',
-          action: { label: 'Undo', run: () => void ui.run(() => api.setExerciseStatus(id, prev)) },
-        });
-      }
-    });
-
   return (
     <div className="page">
       <header className="view-header">
         <div className="week-title">
           <h1>Outstanding</h1>
-          <div className="week-sub">Everything in {semester.name} that isn't completed yet, oldest first</div>
+          <div className="week-sub">Lectures not completed and exercises not handed in yet in {semester.name}, oldest first</div>
         </div>
         <span className="spacer" />
         <FocusPill subject={focus} onClear={clearFocus} />
@@ -107,7 +97,7 @@ export function OutstandingView({
             <span>overdue exercise{counts.overdue === 1 ? '' : 's'}</span>
           </div>
         </div>
-        <div className="stat" title="Uncompleted exercises planned for today or earlier, or due within the next 7 days">
+        <div className="stat" title="Exercises not handed in yet that are planned for today or earlier, or due within the next 7 days">
           <StatusIcon status="in_progress" size={18} />
           <div>
             <strong>{counts.exercises}</strong>
@@ -166,13 +156,13 @@ export function OutstandingView({
                 <div key={`e${e.id}`} className={`out-item ${item.overdue ? 'overdue' : ''}`} style={{ '--c': s?.color } as CSSProperties}>
                   <select
                     className={`status-select status-${e.status}`}
-                    value={e.status}
-                    onChange={(ev) => setStatus(e.id, e.title, e.plannedDates, e.status, ev.target.value as ExerciseStatus)}
-                    title="Status"
+                    value={exerciseStage(e)}
+                    onChange={(ev) => void progress.setStage(e, ev.target.value as ExerciseStage)}
+                    title="Status — choose “Handed in” once it's submitted"
                   >
-                    {(['not_started', 'in_progress', 'completed'] as ExerciseStatus[]).map((st) => (
+                    {EXERCISE_STAGES.map((st) => (
                       <option key={st} value={st}>
-                        {EXERCISE_STATUS_LABEL[st]}
+                        {EXERCISE_STAGE_LABEL[st]}
                       </option>
                     ))}
                   </select>
@@ -191,6 +181,12 @@ export function OutstandingView({
                         .join(', ')}
                       {e.plannedDates.length > 3 && ` +${e.plannedDates.length - 3} more`} ·{' '}
                       <Flag size={11} /> due {formatDate(e.deadlineDate, { weekday: true })}
+                      {e.checklist.length > 0 && e.status !== 'completed' && (
+                        <>
+                          {' · '}
+                          <ChecklistProgress exercise={e} compact />
+                        </>
+                      )}
                     </div>
                   </div>
                   {item.overdue ? (

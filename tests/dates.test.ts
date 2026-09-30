@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addMonths, daysInMonth, formatMonth, startOfMonth } from '../src/shared/dates';
+import { addMonths, daysInMonth, formatCountdown, formatMonth, startOfMonth } from '../src/shared/dates';
 
 describe('month helpers (date picker)', () => {
   it('finds the first day and length of a month', () => {
@@ -20,5 +20,18 @@ describe('month helpers (date picker)', () => {
 
   it('formats the month title', () => {
     expect(formatMonth('2026-09-28')).toBe('September 2026');
+  });
+});
+
+describe('countdown (exams)', () => {
+  it('describes how far a date is from today', () => {
+    const t = '2026-09-29';
+    expect(formatCountdown(t, t)).toBe('Today');
+    expect(formatCountdown(t, '2026-09-30')).toBe('Tomorrow');
+    expect(formatCountdown(t, '2026-09-28')).toBe('Yesterday');
+    expect(formatCountdown(t, '2026-09-25')).toBe('4 days ago');
+    expect(formatCountdown(t, '2026-10-19')).toBe('in 20 days');
+    expect(formatCountdown(t, '2026-10-20')).toBe('in 3 weeks');
+    expect(formatCountdown(t, '2026-11-04')).toBe('in 5 weeks, 1 day');
   });
 });

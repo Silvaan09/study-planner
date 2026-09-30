@@ -136,6 +136,16 @@ export function useLoad<T>(fn: () => Promise<T>, deps: unknown[]): { data: T | u
   return state;
 }
 
+/** The current time, updated every `ms` (for "now" lines and countdowns). */
+export function useNow(ms = 30_000): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), ms);
+    return () => clearInterval(t);
+  }, [ms]);
+  return now;
+}
+
 // ------------------------------------------------------------------ modal shell
 
 export function Modal({

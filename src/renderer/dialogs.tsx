@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from './api';
 import {
   addDays,
@@ -13,12 +13,18 @@ import {
   type ISODate,
 } from '../shared/dates';
 import {
-  EXERCISE_STATUS_LABEL,
-  EXERCISE_STATUSES,
+  EXAM_KIND_LABEL,
+  EXAM_KINDS,
+  EXERCISE_STAGE_LABEL,
+  EXERCISE_STAGES,
+  exerciseStage,
+  type ChecklistItemInput,
+  type Exam,
+  type ExamKind,
   type Exercise,
   type ExerciseChanges,
   type ExerciseSeries,
-  type ExerciseStatus,
+  type ExerciseStage,
   type Id,
   type Lecture,
   type OverridableField,
@@ -28,7 +34,7 @@ import {
   type Subject,
 } from '../shared/types';
 import { Modal, useUi } from './ui';
-import { Plus, Repeat, StatusIcon, Trash, X } from './components/Icons';
+import { Check, Plus, Repeat, StatusIcon, Trash, X } from './components/Icons';
 import { DateField } from './components/DatePicker';
 import { useActions } from './actions';
 
@@ -324,12 +330,13 @@ export function LectureDialog({
 
 // ------------------------------------------------------------------ exercise
 
-export function StatusPicker({ value, onChange }: { value: ExerciseStatus; onChange: (s: ExerciseStatus) => void }) {
+/** Done = the work is finished; handed in = the deadline is dealt with too. */
+export function StatusPicker({ value, onChange }: { value: ExerciseStage; onChange: (s: ExerciseStage) => void }) {
   return (
     <div className="segmented" role="radiogroup">
-      {EXERCISE_STATUSES.map((s) => (
+      {EXERCISE_STAGES.map((s) => (
         <button key={s} type="button" role="radio" aria-checked={value === s} className={`seg status-${s} ${value === s ? 'active' : ''}`} onClick={() => onChange(s)}>
-          <StatusIcon status={s} size={14} /> {EXERCISE_STATUS_LABEL[s]}
+          <StatusIcon status={s} size={14} /> {EXERCISE_STAGE_LABEL[s]}
         </button>
       ))}
     </div>
@@ -342,6 +349,7 @@ const FIELD_LABEL: Record<OverridableField, string> = {
   plannedDate: 'planned dates',
   deadlineDate: 'deadline',
   subjectId: 'subject',
+  checklist: 'checklist steps',
 };
 
 function ConflictDialog({ conflicts, close }: { conflicts: OverrideConflict[]; close: (p?: 'overwrite' | 'keep') => void }) {
@@ -430,6 +438,101 @@ function PlannedDatesField({ dates, deadline, onChange }: { dates: ISODate[]; de
   );
 }
 
+interface DraftStep extends ChecklistItemInput {
+  key: number;
+}
+
+let nextStepKey = 1;
+const draftSteps = (items: ChecklistItemInput[]): DraftStep[] => items.map(({ text, done }) => ({ key: nextStepKey++, text, done }));
+/** The steps as saved: trimmed, without empty rows. */
+const cleanSteps = (steps: DraftStep[]): ChecklistItemInput[] =>
+  steps.map(({ text, done }) => ({ text: text.trim(), done })).filter((s) => s.text !== '');
+
+/**
+ * Editable list of an exercise's steps. Enter adds a step below, Backspace in an empty step removes it,
+ * Up/Down move between steps.
+ */
+function ChecklistEditor({ steps, onChange }: { steps: DraftStep[]; onChange: (s: DraftStep[]) => void }) {
+  const inputs = useRef(new Map<number, HTMLInputElement>());
+  const [focusKey, setFocusKey] = useState<number | null>(null);
+  useEffect(() => {
+    if (focusKey === null) return;
+    inputs.current.get(focusKey)?.focus();
+    setFocusKey(null);
+  }, [focusKey, steps]);
+
+  const update = (key: number, patch: Partial<DraftStep>) => onChange(steps.map((s) => (s.key === key ? { ...s, ...patch } : s)));
+  const insertAfter = (index: number) => {
+    const step = { key: nextStepKey++, text: '', done: false };
+    onChange([...steps.slice(0, index + 1), step, ...steps.slice(index + 1)]);
+    setFocusKey(step.key);
+  };
+  const remove = (index: number, refocus: boolean) => {
+    onChange(steps.filter((_, i) => i !== index));
+    if (refocus && steps.length > 1) setFocusKey(steps[index === 0 ? 1 : index - 1].key);
+  };
+  const done = steps.filter((s) => s.done && s.text.trim()).length;
+  const total = steps.filter((s) => s.text.trim()).length;
+
+  return (
+    <div className="cl-editor">
+      {steps.map((s, i) => (
+        <div key={s.key} className={`cl-edit-row ${s.done ? 'done' : ''}`}>
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={s.done}
+            className="cl-box"
+            title={s.done ? 'Done, click to undo' : 'Mark as done'}
+            onClick={() => update(s.key, { done: !s.done })}
+          >
+            {s.done && <Check size={11} />}
+          </button>
+          <input
+            ref={(el) => {
+              if (el) inputs.current.set(s.key, el);
+              else inputs.current.delete(s.key);
+            }}
+            className="input compact"
+            value={s.text}
+            placeholder={`Step ${i + 1}`}
+            maxLength={200}
+            onChange={(e) => update(s.key, { text: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                insertAfter(i);
+              } else if (e.key === 'Backspace' && s.text === '') {
+                e.preventDefault();
+                remove(i, true);
+              } else if (e.key === 'ArrowUp' && i > 0) {
+                e.preventDefault();
+                setFocusKey(steps[i - 1].key);
+              } else if (e.key === 'ArrowDown' && i < steps.length - 1) {
+                e.preventDefault();
+                setFocusKey(steps[i + 1].key);
+              }
+            }}
+          />
+          <button type="button" className="icon-btn small" title="Remove this step" onClick={() => remove(i, false)}>
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+      <div className="planned-actions">
+        <button type="button" className="btn btn-ghost small" onClick={() => insertAfter(steps.length - 1)}>
+          <Plus size={13} /> Add step
+        </button>
+        {total > 0 && (
+          <span className="muted small">
+            {done} of {total} done
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function defaultCount(deadline: ISODate, semEnd: ISODate, interval: number): number {
   if (!isValidISODate(deadline) || deadline > semEnd) return 1;
   return Math.min(200, Math.floor(diffDays(deadline, semEnd) / (7 * interval)) + 1);
@@ -461,7 +564,10 @@ export function ExerciseDialog({
   const [description, setDescription] = useState('');
   const [planned, setPlanned] = useState<ISODate[]>([initialPlanned]);
   const [deadline, setDeadline] = useState(addDays(initialPlanned, 7));
-  const [status, setStatus] = useState<ExerciseStatus>('not_started');
+  const [stage, setStage] = useState<ExerciseStage>('not_started');
+  const status = stage === 'handed_in' ? 'completed' : stage;
+  const handedIn = stage === 'handed_in';
+  const [steps, setSteps] = useState<DraftStep[]>([]);
   const [repeat, setRepeat] = useState(false);
   const [interval, setIntervalWeeks] = useState(1);
   const [count, setCount] = useState(() => defaultCount(addDays(initialPlanned, 7), semester.endDate, 1));
@@ -477,7 +583,8 @@ export function ExerciseDialog({
       setDescription(e.description);
       setPlanned(e.plannedDates);
       setDeadline(e.deadlineDate);
-      setStatus(e.status);
+      setStage(exerciseStage(e));
+      setSteps(draftSteps(e.checklist));
       if (e.seriesId !== null) {
         const s = await api.getSeries(e.seriesId);
         setSeries(s);
@@ -519,6 +626,8 @@ export function ExerciseDialog({
           plannedDates,
           deadlineDate: deadline,
           status,
+          handedIn,
+          checklist: cleanSteps(steps),
           recurrence: repeat ? { intervalWeeks: interval, count, firstNumber } : undefined,
         }),
       );
@@ -538,6 +647,9 @@ export function ExerciseDialog({
     if (plannedDates.join() !== e.plannedDates.join()) changes.plannedDates = plannedDates;
     if (deadline !== e.deadlineDate) changes.deadlineDate = deadline;
     if (status !== e.status) changes.status = status;
+    if (handedIn !== e.handedIn) changes.handedIn = handedIn;
+    const checklist = cleanSteps(steps);
+    if (JSON.stringify(checklist) !== JSON.stringify(e.checklist.map(({ text, done }) => ({ text, done })))) changes.checklist = checklist;
 
     let res = await ui.run(() => api.updateExercise({ id: e.id, scope, changes }));
     if (res?.status === 'conflicts') {
@@ -609,7 +721,7 @@ export function ExerciseDialog({
           {seriesScope && (
             <p className="small muted">
               Planned days are copied to every affected exercise at the same place in its cycle; a changed deadline shifts each one by the
-              same number of days. Status applies to this exercise only.
+              same number of days. Checklist steps are copied too. Status and ticked steps apply to this exercise only.
             </p>
           )}
           {!seriesScope && exercise && exercise.overrides.length > 0 && (
@@ -656,8 +768,14 @@ export function ExerciseDialog({
       </div>
 
       <Field label="Status">
-        <StatusPicker value={status} onChange={setStatus} />
+        <StatusPicker value={stage} onChange={setStage} />
       </Field>
+
+      <div className="field">
+        <span className="field-label">Checklist</span>
+        <ChecklistEditor steps={steps} onChange={setSteps} />
+        {repeat && steps.length > 0 && <span className="field-hint">Every occurrence of the series gets these steps.</span>}
+      </div>
 
       <Field label="Notes">
         <textarea className="input" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional" />
@@ -711,3 +829,151 @@ export function ExerciseDialog({
   );
 }
 
+
+// ------------------------------------------------------------------ exam
+
+/** Default date for a new exam: the middle of the semester for a midterm, its last day otherwise (never in the past). */
+function defaultExamDate(semester: Semester, kind: ExamKind): ISODate {
+  const mid = addDays(semester.startDate, Math.floor(diffDays(semester.startDate, semester.endDate) / 2));
+  const d = kind === 'midterm' ? mid : semester.endDate;
+  const today = todayISO();
+  return d < today ? today : d;
+}
+
+export function ExamDialog({
+  semester,
+  subjects,
+  examId,
+  defaults,
+  close,
+}: {
+  semester: Semester;
+  subjects: Subject[];
+  examId?: Id;
+  defaults?: { subjectId?: Id; kind?: ExamKind };
+  close: (ok?: boolean) => void;
+}) {
+  const ui = useUi();
+  const actions = useActions();
+  const isEdit = examId !== undefined;
+  const [loaded, setLoaded] = useState<Exam | null>(null);
+  const [subjectId, setSubjectId] = useState<Id | ''>(defaults?.subjectId ?? subjects[0]?.id ?? '');
+  const [kind, setKind] = useState<ExamKind>(defaults?.kind ?? 'midterm');
+  const [title, setTitle] = useState('');
+  const [date, setDate] = useState(() => defaultExamDate(semester, defaults?.kind ?? 'midterm'));
+  const [dateTouched, setDateTouched] = useState(false);
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
+  const [location, setLocation] = useState('');
+  const [notes, setNotes] = useState('');
+
+  useEffect(() => {
+    if (examId === undefined) return;
+    api.getExam(examId).then((e) => {
+      setLoaded(e);
+      setSubjectId(e.subjectId);
+      setKind(e.kind);
+      setTitle(e.title);
+      setDate(e.date);
+      setDateTouched(true);
+      setStart(e.startTime ?? '');
+      setEnd(e.endTime ?? '');
+      setLocation(e.location);
+      setNotes(e.notes);
+    });
+  }, [examId]);
+
+  const pickKind = (k: ExamKind) => {
+    setKind(k);
+    if (!isEdit && !dateTouched) setDate(defaultExamDate(semester, k));
+  };
+
+  const timeError =
+    (start && !isValidTime(start)) || (end && !isValidTime(end))
+      ? 'Use 24-hour HH:MM'
+      : end && !start
+        ? 'Enter a start time too'
+        : start && end && start >= end
+          ? 'Must end after it starts'
+          : null;
+  const valid = subjectId !== '' && isValidISODate(date) && !timeError && (!isEdit || loaded);
+
+  const save = async () => {
+    const input = { subjectId: subjectId as Id, kind, title, date, startTime: start || null, endTime: end || null, location, notes };
+    const ok = await ui.run(() => (examId !== undefined ? api.updateExam(examId, input) : api.createExam(input)));
+    if (ok) close(true);
+  };
+
+  if (subjects.length === 0) {
+    return (
+      <Modal title="New exam" onClose={() => close()}>
+        <p>Create a subject first — every exam belongs to a subject.</p>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal
+      title={isEdit ? 'Edit exam' : 'New exam'}
+      onClose={() => close()}
+      width={520}
+      footer={
+        <Footer
+          onCancel={() => close()}
+          onSave={save}
+          disabled={!valid}
+          saveLabel={isEdit ? 'Save' : 'Add exam'}
+          onDelete={loaded ? async () => (await actions.deleteExam(loaded)) && close(true) : undefined}
+        />
+      }
+    >
+      <Field label="Kind">
+        <div className="segmented full" role="radiogroup">
+          {EXAM_KINDS.map((k) => (
+            <button key={k} type="button" role="radio" aria-checked={kind === k} className={`seg ${kind === k ? 'active' : ''}`} onClick={() => pickKind(k)}>
+              {k === 'other' ? 'Other' : EXAM_KIND_LABEL[k]}
+            </button>
+          ))}
+        </div>
+      </Field>
+      <div className="field-row">
+        <Field label="Subject">
+          <select className="input" value={subjectId} onChange={(e) => setSubjectId(+e.target.value)}>
+            {subjects.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Title" hint="Optional">
+          <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={EXAM_KIND_LABEL[kind]} autoFocus={!isEdit} />
+        </Field>
+      </div>
+      <div className="field-row three">
+        <Field label="Date">
+          <DateField
+            value={date}
+            range={{ start: semester.startDate, end: semester.endDate }}
+            onChange={(d) => {
+              setDate(d);
+              setDateTouched(true);
+            }}
+          />
+        </Field>
+        <Field label="Start" hint="Optional">
+          <TimeInput value={start} onChange={setStart} />
+        </Field>
+        <Field label="End" error={timeError}>
+          <TimeInput value={end} onChange={setEnd} />
+        </Field>
+      </div>
+      <Field label="Room">
+        <input className="input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Optional, e.g. HG F 1" />
+      </Field>
+      <Field label="Notes">
+        <textarea className="input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Topics, allowed aids, …" />
+      </Field>
+    </Modal>
+  );
+}
