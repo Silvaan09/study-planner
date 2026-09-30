@@ -2,9 +2,28 @@
 
 Versions follow [semantic versioning](https://semver.org): **major** for changes you have to act on yourself or that remove features, **minor** for new features and visible UI changes (including automatic database migrations), **patch** for bug fixes and small tweaks.
 
-## Unreleased
-- README: all screenshots retaken with the new sidebar and date picker, plus a new one of the subject focus (`docs/screenshots/subject-focus.png`); features list mentions subject focus and the check-off sound.
-- Development: `npm run seed-demo -- <empty folder>` fills a test data folder with a realistic demo semester (4 subjects, 12 weekly lectures, recurring and one-off exercises, completion matching the current date, a few missed and overdue items). Refuses the real data folders and folders that already contain a database.
+## 1.7.0 — 2026-09-30
+- Timetable: drag an exercise from the "To do" row and hold it at the left or right edge of the timetable to switch to the previous or next week, then drop it on a day there. Keep holding to go further, one week every 0.7 s. While you drag, the edges show an arrow that fills up until the week switches.
+- Timetable: with nothing planned or due, the "To do" and "Due" rows are now the same height.
+- Tests: a new test checks that an unfinished today (nothing done yet, or only part of it) keeps your streak, and that only unfinished earlier days break it.
+
+## 1.6.0 — 2026-09-30
+- **Done and handed in are now separate.** Ticking off an exercise on a day you planned to work on it (the "To do" row, the Today page's "To do today") only marks the work as **Done**; its deadline card in the "Due" row stays open, turns green and says "Done · ready to hand in". Click the flag on the deadline card when you've actually submitted it: that marks it **Handed in** (with Undo), and clicking the check mark again takes the hand-in back while keeping the work done. Handing in also marks the work done.
+- The exercise editor, the right-click menu on exercise cards and the Outstanding list offer four states: Not started, In progress, Done, Handed in. "Completed" is now called "Done".
+- Overdue, "Due in the next 7 days" and the Outstanding list go by handing in: an exercise stays there until it's handed in. On the Today page, the circle in "Due in the next 7 days" goes one step further (Done → Handed in), and the check in "Overdue" hands the exercise in. Week progress, celebrations and the streak still go by the work (Done), since they're about the days you planned.
+- Manage subjects: handed-in exercises show a flag icon and are struck through; done ones show a check.
+- Database schema v4 (new column `exercises.handed_in`). Exercises you had already completed count as handed in, so nothing reappears as outstanding. A backup is made automatically before the upgrade; after updating, older app versions can no longer open the database.
+- README: all screenshots retaken (the demo essay is now done but not handed in yet).
+
+## 1.5.0 — 2026-09-29
+- New **Today** page (first entry under Planning): your streak, how much of today is done, overdue exercises and missed lectures, and the countdown to your next exam at the top; below it the lecture happening now or coming up next, today's schedule (check lectures off right there), the exercises planned for today (with their checklists), everything due in the next 7 days, and all upcoming exams. Focusing a subject in the sidebar filters it too.
+- **Streak**: the number of days in a row on which you completed every lecture and every exercise planned for that day. Days with nothing scheduled are skipped, and today only counts once it's done, so an unfinished today never breaks it.
+- **Exams**: every subject card in Manage subjects has an Exams section for midterms, endterms, finals and other exams, with date, optional time and room, notes, and a countdown ("in 5 weeks, 1 day", amber in the last week, red on the day). Exams also appear in the timetable's "Due" row and on the Today page. Deleted exams go to the trash like everything else.
+- **Checklists**: split an exercise into steps in the exercise editor (Enter adds the next step). Planned timetable cards show the progress (e.g. 2/5); click it to tick steps without opening the editor. The Today page shows the steps of today's exercises, and ticking a step starts a not-started exercise. When every step is done, a toast offers to mark the exercise completed. In a recurring series every occurrence gets the steps; editing them for "This & following" or the whole series keeps each occurrence's ticks and asks before replacing steps you changed on single occurrences.
+- Fix: switching weeks in the timetable no longer flashes an empty grid before the new week appears.
+- Database schema v3 (new tables `exams` and `exercise_checklist_items`). Existing data is kept; a backup is made automatically before the upgrade. After updating, older app versions can no longer open the database.
+- README: all screenshots retaken, plus new ones of the Today page (`docs/screenshots/today.png`) and the subject focus (`docs/screenshots/subject-focus.png`); the features list mentions the Today page, exams, checklists, subject focus and the check-off sound.
+- Development: `npm run seed-demo -- <empty folder>` fills a test data folder with a realistic demo semester (4 subjects, 12 weekly lectures, recurring and one-off exercises, some with checklists, 5 exams, completion matching the current date, a few missed and overdue items). Refuses the real data folders and folders that already contain a database.
 
 ## 1.4.0 — 2026-09-28
 - Subjects: every exercise is now listed on its subject card and opens the exercise editor when clicked. Click an exercise series to expand it and see its occurrences; standalone exercises are listed directly below the series. Each row shows the exercise's status and deadline.

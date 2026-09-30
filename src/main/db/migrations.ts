@@ -150,6 +150,55 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 3,
+    name: 'exams and exercise checklists',
+    up(db) {
+      db.exec(`
+        -- Midterms, endterms, finals of a subject. Times are optional (NULL = not known yet).
+        CREATE TABLE exams (
+          id              INTEGER PRIMARY KEY,
+          subject_id      INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+          kind            TEXT NOT NULL CHECK (kind IN ('midterm', 'endterm', 'final', 'other')),
+          title           TEXT NOT NULL DEFAULT '',
+          date            TEXT NOT NULL,
+          start_time      TEXT,
+          end_time        TEXT,
+          location        TEXT NOT NULL DEFAULT '',
+          notes           TEXT NOT NULL DEFAULT '',
+          created_at      TEXT NOT NULL,
+          updated_at      TEXT NOT NULL,
+          deleted_at      TEXT,
+          trash_batch_id  INTEGER,
+          CHECK (end_time IS NULL OR (start_time IS NOT NULL AND start_time < end_time))
+        );
+        CREATE INDEX idx_exams_subject ON exams(subject_id);
+        CREATE INDEX idx_exams_date ON exams(date);
+
+        -- Sub-steps of an exercise, in order.
+        CREATE TABLE exercise_checklist_items (
+          id           INTEGER PRIMARY KEY,
+          exercise_id  INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+          position     INTEGER NOT NULL,
+          text         TEXT NOT NULL,
+          done         INTEGER NOT NULL DEFAULT 0 CHECK (done IN (0, 1))
+        );
+        CREATE INDEX idx_checklist_exercise ON exercise_checklist_items(exercise_id);
+      `);
+    },
+  },
+  {
+    version: 4,
+    name: 'exercises handed in separately from done',
+    up(db) {
+      // status = the work (the planned "To do" days); handed_in = the deadline is dealt with.
+      // Handed in implies status 'completed'. Exercises completed so far were treated as finished, so they count as handed in.
+      db.exec(`
+        ALTER TABLE exercises ADD COLUMN handed_in INTEGER NOT NULL DEFAULT 0 CHECK (handed_in IN (0, 1));
+        UPDATE exercises SET handed_in = 1 WHERE status = 'completed';
+      `);
+    },
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = migrations[migrations.length - 1].version;

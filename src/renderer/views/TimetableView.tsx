@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react';
 import { api } from '../api';
-import { useLoad, useUi } from '../ui';
-import { useActions, useWeekCompletion } from '../actions';
+import { useLoad, useNow, useUi } from '../ui';
+import { useActions, useChecklistToggle, useExerciseProgress, useWeekCompletion } from '../actions';
 import {
   addDays,
   diffDays,
@@ -17,17 +17,35 @@ import {
   WEEKDAY_SHORT,
   type ISODate,
 } from '../../shared/dates';
-import { exerciseWeeks, weekProgress } from '../../shared/progress';
-import { EXERCISE_STATUS_LABEL, type Exercise, type ExerciseStatus, type LectureOccurrence, type Semester, type Subject } from '../../shared/types';
-import { ExerciseDialog, LectureDialog } from '../dialogs';
+import { weekProgress } from '../../shared/progress';
+import {
+  EXERCISE_STAGES,
+  EXERCISE_STAGE_LABEL,
+  EXERCISE_STATUS_LABEL,
+  examTitle,
+  exerciseStage,
+  type Exam,
+  type Exercise,
+  type ExerciseStatus,
+  type LectureOccurrence,
+  type Semester,
+  type Subject,
+} from '../../shared/types';
+import { ExamDialog, ExerciseDialog, LectureDialog } from '../dialogs';
 import { ContextMenu, type MenuState } from '../components/ContextMenu';
 import { WeekPicker } from '../components/WeekPicker';
 import { FocusPill } from '../components/FocusPill';
 import { DatePopover } from '../components/DatePicker';
+import { ChecklistPopover, ChecklistProgress } from '../components/Checklist';
+import { examTime } from '../components/ExamRow';
 import { bestTopMinute } from '../timetableScroll';
-import { Calendar, Check, ChevronLeft, ChevronRight, Flag, Info, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
+import { Calendar, Check, ChevronLeft, ChevronRight, Flag, GraduationCap, Info, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
 
 const HOUR_PX = 64;
+/** Width of the right-hand edge zone that switches to the next week while dragging. */
+const EDGE_PX = 32;
+/** How long a dragged card has to stay at an edge before the week switches (and again for each further week). */
+const EDGE_DWELL_MS = 700;
 const NEXT_STATUS: Record<ExerciseStatus, ExerciseStatus> = { not_started: 'in_progress', in_progress: 'completed', completed: 'not_started' };
 
 interface Positioned {
@@ -66,15 +84,6 @@ function layoutDay(lectures: LectureOccurrence[]): Positioned[] {
   return items;
 }
 
-function useNow(): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(t);
-  }, []);
-  return now;
-}
-
 export function TimetableView({
   semester,
   weekStart,
@@ -107,12 +116,21 @@ export function TimetableView({
     if (refocus) dateBtnRef.current?.focus();
   }, []);
   const stickyRef = useRef<HTMLDivElement>(null);
+  // Checklist popup of a planned card: which exercise, and the card's progress button it hangs from.
+  const [checklistFor, setChecklistFor] = useState<{ id: number; anchor: HTMLElement } | null>(null);
+  const closeChecklist = useCallback(() => setChecklistFor(null), []);
+  const toggleStep = useChecklistToggle(semester.id);
+  const progress = useExerciseProgress(semester.id);
 
+  // The week on screen: the loaded one. Until a newly picked week has loaded, the previous week stays up
+  // as a whole — rendering its data against the new week's days would show an empty grid for a frame.
+  // Navigation (buttons, keys) still steps from `weekStart`, so quick repeated clicks add up.
+  const shownWeek = data?.weekStart ?? weekStart;
   const subjects = data?.subjects ?? [];
   const subjectById = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(shownWeek, i)), [shownWeek]);
   const semWeeks = useMemo(() => weeksBetween(semester.startDate, semester.endDate), [semester]);
-  const weekIndex = semWeeks.indexOf(weekStart);
+  const weekIndex = semWeeks.indexOf(shownWeek);
 
   // Visible hours: 07:00–21:00 by default (last row starts at 20:00), widened to fit this week's lectures.
   const [firstHour, lastHour] = useMemo(() => {
@@ -166,6 +184,7 @@ export function TimetableView({
     (id: number) => ui.dialog((close) => <ExerciseDialog semester={semester} subjects={subjects} exerciseId={id} close={close} />),
     [ui, semester, subjects],
   );
+  const openExam = (id: number) => ui.dialog((close) => <ExamDialog semester={semester} subjects={subjects} examId={id} close={close} />);
   const newExercise = (plannedDate?: ISODate) =>
     ui.dialog((close) => <ExerciseDialog semester={semester} subjects={subjects} defaults={{ plannedDate: plannedDate ?? defaultPlannedDate(weekStart, today) }} close={close} />);
   const newLecture = (weekday?: number, startMin?: number) =>
@@ -183,22 +202,10 @@ export function TimetableView({
 
   const toggleLecture = (o: LectureOccurrence) =>
     ui.run(() => completing(o.completed ? [] : [o.weekStart], () => api.setLectureCompleted(o.lectureId, o.weekStart, !o.completed)));
-  /** Sets an exercise's status; completing it may finish off the weeks it is planned in. */
-  const setStatus = (e: Exercise, status: ExerciseStatus) =>
-    completing(status === 'completed' ? exerciseWeeks(e.plannedDates) : [], () => api.setExerciseStatus(e.id, status));
-  const cycleStatus = (e: Exercise) => ui.run(() => setStatus(e, NEXT_STATUS[e.status]));
-  /** Flag on a deadline card: check the exercise off, or reopen it (as "In progress") if it's already completed. */
-  const toggleDone = (e: Exercise) =>
-    ui.run(async () => {
-      const next: ExerciseStatus = e.status === 'completed' ? 'in_progress' : 'completed';
-      await setStatus(e, next);
-      if (next === 'completed') {
-        ui.toast(`"${e.title}" completed`, {
-          kind: 'success',
-          action: { label: 'Undo', run: () => void ui.run(() => api.setExerciseStatus(e.id, e.status)) },
-        });
-      }
-    });
+  /** Status circle on a planned card: the work only; handing in is the deadline card's flag. */
+  const cycleStatus = (e: Exercise) => progress.setStatus(e, NEXT_STATUS[e.status]);
+  /** Flag on a deadline card: hand the exercise in (which also marks the work done), or take that back. */
+  const toggleHandedIn = (e: Exercise) => progress.setHandedIn(e, !e.handedIn);
 
   const lectureMenu = (ev: React.MouseEvent, o: LectureOccurrence) => {
     ev.preventDefault();
@@ -231,15 +238,28 @@ export function TimetableView({
       x: ev.clientX,
       y: ev.clientY,
       items: [
-        ...(['not_started', 'in_progress', 'completed'] as ExerciseStatus[]).map((s) => ({
-          label: EXERCISE_STATUS_LABEL[s],
+        ...EXERCISE_STAGES.map((s) => ({
+          label: EXERCISE_STAGE_LABEL[s],
           icon: <StatusIcon status={s} size={14} />,
-          disabled: e.status === s,
-          onSelect: () => ui.run(() => setStatus(e, s)),
+          disabled: exerciseStage(e) === s,
+          onSelect: () => void progress.setStage(e, s),
         })),
         'separator' as const,
         { label: 'Edit…', icon: <Pencil size={14} />, onSelect: () => openExercise(e.id) },
         { label: 'Delete…', icon: <Trash size={14} />, danger: true, onSelect: () => actions.deleteExercise(e) },
+      ],
+    });
+  };
+
+  const examMenu = (ev: React.MouseEvent, x: Exam) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    setMenu({
+      x: ev.clientX,
+      y: ev.clientY,
+      items: [
+        { label: 'Edit exam…', icon: <Pencil size={14} />, onSelect: () => openExam(x.id) },
+        { label: 'Delete…', icon: <Trash size={14} />, danger: true, onSelect: () => actions.deleteExam(x) },
       ],
     });
   };
@@ -283,6 +303,67 @@ export function TimetableView({
       });
     },
   });
+
+  // Holding a dragged card at the left or right edge (left of the day columns / the last EDGE_PX of the
+  // timetable) switches to the previous / next week every EDGE_DWELL_MS, so a session can move across weeks.
+  const timetableRef = useRef<HTMLDivElement>(null);
+  const [edge, setEdge] = useState<-1 | 0 | 1>(0);
+  const [flips, setFlips] = useState(0);
+  const weekRef = useRef(weekStart);
+  weekRef.current = weekStart;
+  const lastOver = useRef(0);
+  useEffect(() => {
+    if (!dragging) {
+      setEdge(0);
+      return;
+    }
+    const onOver = (ev: globalThis.DragEvent) => {
+      const box = timetableRef.current?.getBoundingClientRect();
+      const firstDay = timetableRef.current?.querySelector('.tt-day-head')?.getBoundingClientRect();
+      if (!box || !firstDay) return;
+      lastOver.current = performance.now();
+      setEdge(ev.clientX < firstDay.left ? -1 : ev.clientX > box.right - EDGE_PX ? 1 : 0);
+    };
+    // Leaving the window: dragover stops, so don't keep flipping.
+    const onLeave = (ev: globalThis.DragEvent) => {
+      if (!ev.relatedTarget) setEdge(0);
+    };
+    document.addEventListener('dragover', onOver);
+    document.addEventListener('dragleave', onLeave);
+    return () => {
+      document.removeEventListener('dragover', onOver);
+      document.removeEventListener('dragleave', onLeave);
+    };
+  }, [dragging]);
+  useEffect(() => {
+    if (edge === 0) return;
+    const timer = window.setInterval(() => {
+      if (performance.now() - lastOver.current > 500) return setEdge(0);
+      setWeekStart(addDays(weekRef.current, 7 * edge));
+      setDropDay(null);
+      setFlips((n) => n + 1);
+    }, EDGE_DWELL_MS);
+    return () => window.clearInterval(timer);
+  }, [edge, setWeekStart]);
+  // Once the week has changed, the dragged card is no longer in the page, so its dragend never arrives.
+  // No mouse events fire during a drag, so the first mouse move afterwards means the drag is over.
+  useEffect(() => {
+    if (!dragging || flips === 0) return;
+    const end = () => {
+      setDragging(null);
+      setDropDay(null);
+    };
+    window.addEventListener('mousemove', end, { once: true });
+    window.addEventListener('mousedown', end, { once: true });
+    return () => {
+      window.removeEventListener('mousemove', end);
+      window.removeEventListener('mousedown', end);
+    };
+  }, [dragging, flips]);
+  useEffect(() => {
+    if (!dragging) setFlips(0);
+  }, [dragging]);
+
   const dayClass = (day: ISODate) =>
     [
       day === today && 'today',
@@ -306,7 +387,8 @@ export function TimetableView({
   const dayColumns = days
     .map((d) => {
       const cols = Math.max(0, ...lecturesByDay.get(d)!.map((p) => p.cols));
-      const hasExercises = (data?.exercises ?? []).some((e) => e.plannedDates.includes(d) || e.deadlineDate === d);
+      const hasExercises =
+        (data?.exercises ?? []).some((e) => e.plannedDates.includes(d) || e.deadlineDate === d) || (data?.exams ?? []).some((x) => x.date === d);
       const weight = cols === 0 && !hasExercises ? 0.7 : cols <= 1 ? 1 : cols === 2 ? 1.6 : 2.2;
       return `minmax(0, ${weight}fr)`;
     })
@@ -337,9 +419,9 @@ export function TimetableView({
           </button>
         </div>
         <div className="week-title">
-          <h1>{formatWeekRange(weekStart)}</h1>
+          <h1>{formatWeekRange(shownWeek)}</h1>
           <div className="week-sub">
-            {weekIndex >= 0 ? `Semester week ${weekIndex + 1} of ${semWeeks.length}` : 'Outside the semester'} · Calendar week {isoWeekNumber(weekStart)}
+            {weekIndex >= 0 ? `Semester week ${weekIndex + 1} of ${semWeeks.length}` : 'Outside the semester'} · Calendar week {isoWeekNumber(shownWeek)}
           </div>
         </div>
         <div className="week-jump">
@@ -389,7 +471,19 @@ export function TimetableView({
         </div>
       )}
 
-      <div className={`timetable ${dragging ? 'is-dragging' : ''}`} style={gridStyle}>
+      <div className={`timetable ${dragging ? 'is-dragging' : ''}`} style={gridStyle} ref={timetableRef}>
+        {dragging && (
+          <>
+            <div className={`tt-edge prev ${edge === -1 ? 'active' : ''}`} aria-hidden>
+              {edge === -1 && <span key={flips} className="tt-edge-fill" />}
+              <ChevronLeft size={18} />
+            </div>
+            <div className={`tt-edge next ${edge === 1 ? 'active' : ''}`} aria-hidden>
+              {edge === 1 && <span key={flips} className="tt-edge-fill" />}
+              <ChevronRight size={18} />
+            </div>
+          </>
+        )}
         {/* One scroll container for all rows, so every row has the same width and the day lines align. */}
         <div className="tt-scroll" ref={scrollRef}>
         <div className="tt-sticky" ref={stickyRef}>
@@ -415,6 +509,9 @@ export function TimetableView({
               </div>
               <div className="legend-key">
                 <span className="key key-due" /> Deadline
+              </div>
+              <div className="legend-key">
+                <span className="key key-exam" /> Exam
               </div>
             </div>
           </div>
@@ -458,7 +555,7 @@ export function TimetableView({
                       }}
                       onClick={() => openExercise(e.id)}
                       onContextMenu={(ev) => exerciseMenu(ev, e)}
-                      title={`${e.title} (${subjectName(e.subjectId)}) — ${EXERCISE_STATUS_LABEL[e.status]}\nDeadline: ${formatDate(e.deadlineDate, { weekday: true, year: true })}${sessions > 1 ? `\nPlanned on ${sessions} days: ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}` : ''}\nDrag to another day to move this session.`}
+                      title={`${e.title} (${subjectName(e.subjectId)}) — ${EXERCISE_STATUS_LABEL[e.status]}\nDeadline: ${formatDate(e.deadlineDate, { weekday: true, year: true })}${sessions > 1 ? `\nPlanned on ${sessions} days: ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}` : ''}\nDrag to another day to move this session (hold it at the left or right edge to change weeks).`}
                     >
                       <button
                         className="status-btn"
@@ -484,6 +581,22 @@ export function TimetableView({
                               ? 'Due the same day'
                               : `Due ${formatDate(e.deadlineDate, { weekday: dueIn < 7 })}`}
                         </span>
+                        {e.checklist.length > 0 && e.status !== 'completed' && (
+                          <button
+                            className="cl-btn"
+                            title="Show checklist"
+                            aria-haspopup="dialog"
+                            aria-expanded={checklistFor?.id === e.id}
+                            draggable={false}
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              const anchor = ev.currentTarget;
+                              setChecklistFor((c) => (c?.anchor === anchor ? null : { id: e.id, anchor }));
+                            }}
+                          >
+                            <ChecklistProgress exercise={e} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -494,42 +607,68 @@ export function TimetableView({
           })}
         </div>
 
-        {/* Deadlines */}
+        {/* Exams and deadlines */}
         <div className="tt-row tt-band tt-due">
-          <div className="tt-gutter band-label" title="Hand-in deadlines on this day">
+          <div className="tt-gutter band-label" title="Exams and hand-in deadlines on this day">
             <span>Due</span>
           </div>
           {days.map((d) => {
             const list = (data?.exercises ?? []).filter((e) => e.deadlineDate === d);
+            const exams = (data?.exams ?? []).filter((x) => x.date === d);
             return (
               <div key={d} className={`tt-cell ${dayClass(d)}`} {...dropProps(d)}>
+                {exams.map((x) => {
+                  const time = examTime(x);
+                  return (
+                    <div
+                      key={`exam${x.id}`}
+                      role="button"
+                      tabIndex={0}
+                      className={`ex-chip exam ${d < today ? 'past' : ''} ${dim(x.subjectId)}`}
+                      style={{ '--c': colorOf(x.subjectId) } as CSSProperties}
+                      onClick={() => openExam(x.id)}
+                      onKeyDown={(ev) => ev.key === 'Enter' && openExam(x.id)}
+                      onContextMenu={(ev) => examMenu(ev, x)}
+                      title={`${examTitle(x)} (${subjectName(x.subjectId)})${time ? `\n${time}` : ''}${x.location ? `\nRoom: ${x.location}` : ''}`}
+                    >
+                      <GraduationCap size={14} className="exam-icon" />
+                      <span className="ex-text">
+                        <span className="ex-subject">{subjectName(x.subjectId)}</span>
+                        <span className="ex-title">{examTitle(x)}</span>
+                        {(time || x.location) && <span className="ex-meta">{[time, x.location].filter(Boolean).join(' · ')}</span>}
+                      </span>
+                    </div>
+                  );
+                })}
                 {list.map((e) => {
-                  const overdue = e.status !== 'completed' && d < today;
+                  const overdue = !e.handedIn && d < today;
+                  const ready = !e.handedIn && e.status === 'completed';
                   return (
                     <div
                       key={e.id}
                       role="button"
                       tabIndex={0}
-                      className={`ex-chip due status-${e.status} ${overdue ? 'overdue' : ''} ${dim(e.subjectId)}`}
+                      className={`ex-chip due ${e.handedIn ? 'handed-in' : ready ? 'ready' : ''} ${overdue ? 'overdue' : ''} ${dim(e.subjectId)}`}
                       style={{ '--c': colorOf(e.subjectId) } as CSSProperties}
                       onClick={() => openExercise(e.id)}
                       onKeyDown={(ev) => ev.key === 'Enter' && openExercise(e.id)}
                       onContextMenu={(ev) => exerciseMenu(ev, e)}
-                      title={`Deadline: ${e.title} (${subjectName(e.subjectId)}) — ${EXERCISE_STATUS_LABEL[e.status]}\nPlanned for ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}`}
+                      title={`Deadline: ${e.title} (${subjectName(e.subjectId)}) — ${EXERCISE_STAGE_LABEL[exerciseStage(e)]}\nPlanned for ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}`}
                     >
                       <button
                         className="due-check"
                         onClick={(ev) => {
                           ev.stopPropagation();
-                          void toggleDone(e);
+                          void toggleHandedIn(e);
                         }}
-                        title={e.status === 'completed' ? 'Completed — click to reopen' : 'Click to mark as completed'}
+                        title={e.handedIn ? 'Handed in — click to take back' : 'Click to mark as handed in'}
                       >
-                        {e.status === 'completed' ? <Check size={13} /> : <Flag size={13} />}
+                        {e.handedIn ? <Check size={13} /> : <Flag size={13} />}
                       </button>
                       <span className="ex-text">
                         <span className="ex-subject">{subjectName(e.subjectId)}</span>
                         <span className="ex-title">{e.title}</span>
+                        {ready && <span className="ex-meta">Done · ready to hand in</span>}
                       </span>
                     </div>
                   );
@@ -615,6 +754,22 @@ export function TimetableView({
       </div>
 
       {menu && <ContextMenu menu={menu} onClose={() => setMenu(null)} />}
+      {(() => {
+        const e = checklistFor && data?.exercises.find((x) => x.id === checklistFor.id);
+        if (!checklistFor || !e || e.checklist.length === 0 || !checklistFor.anchor.isConnected) return null;
+        return (
+          <ChecklistPopover
+            exercise={e}
+            anchor={checklistFor.anchor}
+            onToggle={(itemId, done) => void toggleStep(itemId, done)}
+            onEdit={() => {
+              closeChecklist();
+              openExercise(e.id);
+            }}
+            onClose={closeChecklist}
+          />
+        );
+      })()}
     </div>
   );
 }

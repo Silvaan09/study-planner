@@ -51,7 +51,7 @@ try {
   const today = todayArg ?? todayISO();
   const summary = seedDemo(new StudyService(opened.db), today);
   console.log(
-    `Seeded ${opened.dbPath} (as of ${today}): ${summary.subjects} subjects, ${summary.lectures} weekly lectures, ${summary.exercises} exercises.`,
+    `Seeded ${opened.dbPath} (as of ${today}): ${summary.subjects} subjects, ${summary.lectures} weekly lectures, ${summary.exercises} exercises, ${summary.exams} exams.`,
   );
 } finally {
   opened.db.close();

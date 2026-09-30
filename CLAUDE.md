@@ -9,12 +9,12 @@ Windows desktop app for planning a university semester around a weekly timetable
 ## Docs
 
 - `README.md` is the public GitHub landing page: user-facing, short, no internals (those belong here). Update it when a notable feature changes.
-- `docs/screenshots/*.png` are shown in the README (1440×900, dark theme, `npm run seed-demo` data as of 2026-09-28, timetable shows week 2): `timetable`, `exercise-dialog` (new recurring "Lab Report", deadline date picker open), `outstanding`, `subject-focus` (Mathematics focused), `subjects` ("Problem Set" series expanded), `week-complete` (last open lecture of week 2 clicked; celebration captured ~1 s later). Capture them all in ONE CDP session so the viewport override isn't reset between shots. Retake them when the UI changes visibly — seed an empty throwaway folder with `npm run seed-demo -- <folder>`, launch with `STUDY_PLANNER_DATA_DIR=<folder>` and `--remote-debugging-port`, then capture over CDP (`Emulation.setDeviceMetricsOverride` 1440×900, `Page.captureScreenshot`; the override resizes the window on connect/disconnect, which closes open popups such as the date picker).
+- `docs/screenshots/*.png` are shown in the README (1440×900, dark theme, `npm run seed-demo -- <folder> --today=2026-09-29` data, taken on that day since the app uses the real clock; timetable shows week 2): `today`, `timetable`, `exercise-dialog` (new recurring Physics "Lab Report" planned Thu 17 + 24 Sep, three checklist steps, every 2 weeks, deadline date picker open), `outstanding`, `subject-focus` (Mathematics focused), `subjects` ("Problem Set" series expanded), `week-complete` (week 2's open exercises completed through the API first, then its last open lecture clicked; celebration captured ~1 s later). Capture them all in ONE CDP session so the viewport override isn't reset between shots. Retake them when the UI changes visibly — seed an empty throwaway folder with `npm run seed-demo -- <folder>`, launch with `STUDY_PLANNER_DATA_DIR=<folder>` and `--remote-debugging-port`, then capture over CDP (`Emulation.setDeviceMetricsOverride` 1440×900, `Page.captureScreenshot`; the override resizes the window on connect/disconnect, which closes open popups such as the date picker).
 
 ## Demo / test data
 
 - **Always test the UI against the demo data**, not an empty or hand-seeded DB: `npm run seed-demo -- <empty folder> [--today=YYYY-MM-DD]` (`scripts/seed-demo.mjs` bundles `src/main/demoData.ts` with esbuild and runs it through `StudyService`). It refuses `%APPDATA%\StudyPlanner(-dev)` and any folder that already has a database.
-- Content (`src/main/demoData.ts`): "Autumn Semester 2026" (14 Sep – 18 Dec), Chemistry/Computer Science/Mathematics/Physics, 12 weekly lectures, recurring series (Problem Set, Linear Algebra Sheet, Coding Assignment, Lab Report every 2 weeks, Mechanics Problems, Worksheet every 2 weeks) and standalone exercises (essay, quiz, project proposal, midterm prep, presentation). Completion follows `today`: past lectures done except `MISSED_LECTURES`; exercises due before today completed except `OVERDUE_EXERCISES`, started ones in progress. Tested in `tests/demo-data.test.ts`; keep that test in sync when changing the data.
+- Content (`src/main/demoData.ts`): "Autumn Semester 2026" (14 Sep – 18 Dec), Chemistry/Computer Science/Mathematics/Physics, 12 weekly lectures, recurring series (Problem Set, Linear Algebra Sheet, Coding Assignment, Lab Report every 2 weeks, Mechanics Problems, Worksheet every 2 weeks) and standalone exercises (essay, quiz, project proposal, midterm prep, presentation); checklists on Lab Report, the essay and the project proposal; 5 exams (`EXAMS`: Mathematics midterm + final, Physics midterm, CS endterm, Chemistry final). Completion follows `today`: past lectures done except `MISSED_LECTURES`; exercises due before today handed in (all steps ticked) except `OVERDUE_EXERCISES`; `DONE_NOT_HANDED_IN` (the essay) done but not handed in once its planned days are past; started ones in progress (first half of the steps ticked). Tested in `tests/demo-data.test.ts`; keep that test in sync when changing the data.
 - `CHANGELOG.md` lists changes per version.
 
 ## Stack & commands
@@ -24,7 +24,7 @@ Electron 44 (bundles Node 24 → built-in `node:sqlite`, no native modules) · R
 | Command | What it does |
 |---|---|
 | `npm run dev` | Vite dev server + Electron, uses the `StudyPlanner-dev` data folder |
-| `npm test` | vitest: business rules, subject overview, trash, persistence, migrations (`tests/service.test.ts`), timetable scroll position (`tests/timetable-scroll.test.ts`), month helpers (`tests/dates.test.ts`), demo data (`tests/demo-data.test.ts`) |
+| `npm test` | vitest: business rules, exams, checklists, handing in, Today data + streak, subject overview, trash, persistence, migrations (`tests/service.test.ts`), timetable scroll position (`tests/timetable-scroll.test.ts`), month helpers + countdown (`tests/dates.test.ts`), demo data (`tests/demo-data.test.ts`) |
 | `npm run seed-demo -- <folder>` | fill an empty data folder with the demo semester (see "Demo / test data") |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run build` | bundle main/preload (`scripts/build-main.mjs`) + renderer → `dist/` |
@@ -45,9 +45,9 @@ Changes that don't affect the installed app (build scripts, tests, docs, Claude 
 ## Layout
 
 ```
-src/shared/dates.ts        ISO-date ("YYYY-MM-DD") + "HH:MM" helpers, formatting, week + month math (Monday = 1)
-src/shared/types.ts        domain types + StudyApi (the full UI↔data contract)
-src/shared/progress.ts     week completion counts (weekProgress), week state (weekStatus), which celebration a change earns (celebrationFor)
+src/shared/dates.ts        ISO-date ("YYYY-MM-DD") + "HH:MM" helpers, formatting, week + month math (Monday = 1), formatCountdown
+src/shared/types.ts        domain types + StudyApi (the full UI↔data contract); examTitle
+src/shared/progress.ts     week completion counts (weekProgress), week state (weekStatus), which celebration a change earns (celebrationFor), streak (computeStreak)
 src/main/db/database.ts    open DB (WAL, integrity check), backups, migration runner
 src/main/db/migrations.ts  versioned schema — append only
 src/main/service.ts        ALL business rules + SQL (StudyService); throws UserError for user-facing messages
@@ -55,21 +55,23 @@ src/main/main.ts           Electron window, data-folder resolution, IPC allow-li
 src/main/demoData.ts       demo semester for testing/screenshots (seedDemo; not used by the app)
 src/preload/preload.ts     exposes window.studyApi.call(method, args)
 src/renderer/api.ts        typed proxy over the IPC call
-src/renderer/ui.tsx        UiProvider: toasts, dialog(), run() (mutation + error toast + refresh), celebrate(), useLoad()
-src/renderer/actions.tsx   shared delete flows (scope chooser, confirm, Undo toast); useWeekCompletion (ding + celebration check)
+src/renderer/ui.tsx        UiProvider: toasts, dialog(), run() (mutation + error toast + refresh), celebrate(), useLoad(), useNow()
+src/renderer/actions.tsx   shared delete flows (scope chooser, confirm, Undo toast); useWeekCompletion (ding + celebration check); useExerciseProgress (status / hand-in); useChecklistToggle
 src/renderer/sound.ts      check-off ding and celebration chime (Web Audio), mute preference
 src/renderer/components/Celebration.tsx  confetti overlay (click-through, auto-removed)
 src/renderer/components/WeekPicker.tsx   custom week dropdown with per-week status icons (getSemesterProgress)
 src/renderer/components/DatePicker.tsx   custom calendar: DateField (replaces <input type="date">), DatePopover (portal popup)
-src/renderer/dialogs.tsx   Semester/Subject/Lecture/Exercise dialogs, TimeInput, StatusPicker
+src/renderer/components/Checklist.tsx    ChecklistProgress ("2/5" + bar), ChecklistList (tickable steps), ChecklistPopover (timetable card popup)
+src/renderer/components/ExamRow.tsx      ExamRow (subject card), ExamCountdown badge, examTime, showsKind
+src/renderer/dialogs.tsx   Semester/Subject/Lecture/Exercise/Exam dialogs, ChecklistEditor, TimeInput, StatusPicker
 src/renderer/App.tsx       sidebar (see "Sidebar"), view switching, subject focus state
 src/renderer/components/FocusPill.tsx    "Only <subject> ×" pill shown in view headers while a subject is focused
-src/renderer/views/        TimetableView, OutstandingView, SubjectsView ("Manage subjects"), TrashView, SettingsView (sound + data & backups)
+src/renderer/views/        TodayView, TimetableView, OutstandingView, SubjectsView ("Manage subjects"), TrashView, SettingsView (sound + data & backups)
 src/renderer/styles.css    dark theme only; tokens on :root
 src/renderer/timetableScroll.ts  initial timetable scroll position (pure, tested)
 tests/service.test.ts      service + database tests against a real temp SQLite file
 tests/timetable-scroll.test.ts   bestTopMinute
-tests/dates.test.ts        month helpers (addMonths clamping, daysInMonth, formatMonth)
+tests/dates.test.ts        month helpers (addMonths clamping, daysInMonth, formatMonth), formatCountdown
 tests/demo-data.test.ts    seedDemo produces a semester in progress
 scripts/seed-demo.mjs      npm run seed-demo
 ```
@@ -89,9 +91,11 @@ scripts/seed-demo.mjs      npm run seed-demo
 `semesters → subjects → lectures` (weekly pattern: weekday, start/end) `→ lecture_occurrences` (per-week state keyed by `week_start` Monday: `completed`, `removed` tombstone). Occurrences without a row are implicitly "not completed".
 `subjects → exercise_series` (base title, interval weeks, `next_number`) `→ exercises` (one row per occurrence; `sequence_number`; `overrides` JSON list of fields changed individually). Standalone exercises have `series_id = NULL`.
 `exercises → exercise_plan_dates` (schema v2): every day an exercise is planned to be worked on (≥1). `exercises.planned_date` is kept equal to the earliest one by `StudyService.writeExercise/insertExercise` — always write through those. In the API: `Exercise.plannedDates` (sorted) and `plannedDate` (= first); override field `'plannedDate'` covers all planned dates. Recurring series repeat the planned pattern per occurrence (shift = interval × 7 × sequence difference).
-Status: `not_started | in_progress | completed` (one per exercise, not per planned day). All planned dates must be ≤ the deadline (service check on the latest; DB CHECK on `planned_date`).
+Status: `not_started | in_progress | completed` (one per exercise, not per planned day; UI label for `completed` is "Done") = the work, shown on the planned cards. Separately `handed_in` (schema v4, `Exercise.handedIn`) = the deadline is dealt with, shown on the deadline card; invariant handed in ⇒ `completed` (`setExerciseStatus` to anything else clears it, `setExerciseHandedIn(true)` sets `completed`, `settleProgress` in `updateExercise`; like status it applies to one occurrence only, never an override). The UI combines both into `ExerciseStage` (`not_started | in_progress | completed | handed_in`, `exerciseStage`, `EXERCISE_STAGE_LABEL` in types.ts) for the four-way pickers. Overdue, due soon and Outstanding go by `handedIn`; week progress, celebrations, streak and "done today" go by `status`. All planned dates must be ≤ the deadline (service check on the latest; DB CHECK on `planned_date`).
+`exercises → exercise_checklist_items` (schema v3): ordered steps (`position`, `text`, `done`). API: `Exercise.checklist` (`{id, text, done}[]`), written as a whole list (`ChecklistItemInput[]`) via `createExercise`/`updateExercise` (`saveChecklist` deletes and re-inserts, so item ids change on every save) or one step at a time via `setChecklistItemDone` (also moves a `not_started` exercise to `in_progress`). Completing an exercise does not tick its steps; `ChecklistProgress` is hidden on completed exercises.
+`subjects → exams` (schema v3): `kind` (`midterm | endterm | final | other`), optional `title` (UI shows `examTitle` = title or the kind's label), `date`, optional `start_time`/`end_time` (end requires start), `location`, `notes`. Trashable (batch kind `exam`); returned by `subjectOverview` (`exams`), `getWeek` (exams in the week) and `getToday` (from today on).
 
-Trash: rows get `deleted_at` + `trash_batch_id` (one batch per user action, listed in `trash_batches`). Children stay hidden while an ancestor is trashed (queries join ancestors — see `LIVE_*` fragments in service.ts). Restore is refused while a parent is still in the trash. Purge hard-deletes (FK cascades), except lecture occurrences which become `removed` tombstones.
+Trash (`TRASH_TABLES`, child → parent: exams, exercises, exercise_series, lecture_occurrences, lectures, subjects, semesters): rows get `deleted_at` + `trash_batch_id` (one batch per user action, listed in `trash_batches`). Children stay hidden while an ancestor is trashed (queries join ancestors — see `LIVE_*` fragments in service.ts). Restore is refused while a parent is still in the trash. Purge hard-deletes (FK cascades), except lecture occurrences which become `removed` tombstones.
 
 ## Rules that must hold
 
@@ -99,7 +103,7 @@ Trash: rows get `deleted_at` + `trash_batch_id` (one batch per user action, list
 - **Schema change = new migration** appended to `migrations.ts` (never edit old ones); preserve data; add a test that old data survives. The runner backs up before migrating, runs each migration in a transaction, and refuses DBs from newer versions.
 - New service method → add to `StudyApi` in `types.ts` and to `serviceMethods` in `main.ts`.
 - Lecture completion is per week; every exercise planned date ≤ deadline (validated in the service; DB CHECK covers the earliest).
-- Recurring scopes `this | future | all`. Series edits must never silently overwrite per-occurrence `overrides` (service returns `conflicts`; UI asks overwrite/keep). Series-scope edits: a changed deadline shifts each occurrence by the same number of days; a changed planned-days pattern is copied to each occurrence at its position in the series. Drag-and-drop (`moveExercise(id, from, to)`) moves one planned day of that occurrence only; moving onto an already planned day merges them.
+- Recurring scopes `this | future | all`. Series edits must never silently overwrite per-occurrence `overrides` (service returns `conflicts`; UI asks overwrite/keep). Series-scope edits: a changed deadline shifts each occurrence by the same number of days; a changed planned-days pattern is copied to each occurrence at its position in the series. Drag-and-drop (`moveExercise(id, from, to)`) moves one planned day of that occurrence only; moving onto an already planned day merges them. Checklists: only a changed list of step texts is an individual change (override `'checklist'`, may conflict); ticking steps is progress like status. Series-scope checklist edits copy the steps to each occurrence, keeping the done state of steps with the same text; new occurrences (`createExercise` recurrence, `extendSeries`) get the steps unticked.
 - Deletes go to the trash first.
 - Dates: use `src/shared/dates.ts`; never time-zone-dependent `Date` math.
 
@@ -107,24 +111,31 @@ Trash: rows get `deleted_at` + `trash_batch_id` (one batch per user action, list
 
 - A week's progress = its lecture occurrences + the exercises with a planned date in it (`weekProgress`, also used for the timetable header counters). Exercises only *due* in a week don't count there.
 - Kinds: `lectures` / `exercises` when that category just became fully completed; `everything` instead when afterwards nothing in the week is left (the other category is complete or empty — e.g. finishing the lectures of a week without exercises). An empty category never triggers a celebration by itself.
-- Completion actions go through `useWeekCompletion(semesterId)(weeks, change)`: it snapshots those weeks via `getWeek` before and after the change, so deleting unfinished items never celebrates. Lecture → its `weekStart`; exercise → `exerciseWeeks(plannedDates)`. Pass `[]` when un-completing. Wired into TimetableView (lecture click/menu, status circle, deadline flag, status menu) and OutstandingView; status changes saved from the exercise dialog don't celebrate.
+- Exercise status/hand-in changes go through `useExerciseProgress(semesterId)` in actions.tsx (`setStatus`, `setHandedIn` with "handed in" toast + Undo, `setStage`), which wraps `useWeekCompletion`.
+- Completion actions go through `useWeekCompletion(semesterId)(weeks, change)`: it snapshots those weeks via `getWeek` before and after the change, so deleting unfinished items never celebrates. Lecture → its `weekStart`; exercise → `exerciseWeeks(plannedDates)`. Pass `[]` when un-completing. Wired into TimetableView (lecture click/menu, status circle, deadline flag, status menu), OutstandingView, TodayView (lecture check, status circles, overdue check) and the "Mark completed" action of `useChecklistToggle`'s all-steps-done toast; status changes saved from the exercise dialog don't celebrate.
 - `ui.celebrate(kind, weekStart)` shows `Celebration` for `CELEBRATION_MS`; `prefers-reduced-motion` hides the confetti.
 - Sound (`src/renderer/sound.ts`, Web Audio, synthesized — no audio files): `useWeekCompletion` plays `playDing()` (one bell note, E6) whenever it gets weeks, i.e. whenever something is checked off (never on un-completing); `ui.celebrate` adds `playCelebration(kind)` (C–E–G arpeggio, + C7 for `everything`) just after the ding. Mute toggle = switch in Settings (localStorage key `sound`; turning it on plays a preview ding).
 
 ## Sidebar
 
-- Order: brand · Semester (picker, edit/new, dates) · **Planning** (Timetable, Outstanding + open/overdue badge) · **Subjects** (one row per subject, then "Manage subjects" = SubjectsView) · pinned to the bottom above a divider: **Trash** (muted count badge) and **Settings**. Views: `timetable | outstanding | subjects | trash | settings` (remembered in localStorage; the old `data` value maps to `settings`).
-- Subject focus (`focusId` in `App`, not persisted, cleared on semester switch; the sidebar and views use the resolved `focus` subject, so a deleted/trashed subject simply ends the focus): clicking a subject row focuses it, clicking again unfocuses; other rows fade. TimetableView adds `.dimmed` (faded + greyscale, clearer on hover) to lectures and exercise cards of other subjects; OutstandingView lists and counts only that subject; SubjectsView dims the other cards. Each shows `FocusPill` in its header to clear it. Focusing from Trash/Settings switches to the timetable.
-- The timetable legend (Lecture / Completed / Missed / To do / Deadline) lives in the top-left corner cell of the timetable: `Info` button, popover on hover or keyboard focus.
+- Order: brand · Semester (picker, edit/new, dates) · **Planning** (Today, Timetable, Outstanding + open/overdue badge) · **Subjects** (one row per subject, then "Manage subjects" = SubjectsView) · pinned to the bottom above a divider: **Trash** (muted count badge) and **Settings**. Views: `today | timetable | outstanding | subjects | trash | settings` (remembered in localStorage, default `timetable`; the old `data` value maps to `settings`).
+- Subject focus (`focusId` in `App`, not persisted, cleared on semester switch; the sidebar and views use the resolved `focus` subject, so a deleted/trashed subject simply ends the focus): clicking a subject row focuses it, clicking again unfocuses; other rows fade. TimetableView adds `.dimmed` (faded + greyscale, clearer on hover) to lectures and exercise cards of other subjects; OutstandingView and TodayView list and count only that subject (the streak stays global); SubjectsView dims the other cards. Each shows `FocusPill` in its header to clear it. Focusing from Trash/Settings switches to the timetable.
+- The timetable legend (Lecture / Completed / Missed / To do / Deadline / Exam) lives in the top-left corner cell of the timetable: `Info` button, popover on hover or keyboard focus.
+
+## Today view notes
+
+- One call: `getToday(semesterId, today)` → today's lectures, the next 7 days' lectures (`upcomingLectures`, for "Up next" once today's are over), exercises planned today, uncompleted ones due within 7 days (`dueSoon`) or overdue, missed past lectures, exams from today on, and the streak. Reloads when the date changes (`useNow`, 30 s).
+- Stat row: streak · done today (today's lectures + planned exercises) · overdue exercises + missed lectures (opens Outstanding) · days until the next exam. Left column: "Up next" (the running lecture with a progress bar, else the next one today with "Starts in …", else the first upcoming one), Today's schedule (exams today + lectures, check button), To do today (status circle = work only, checklist ticked inline). Right column: Overdue (or "Catch up" when only missed lectures; check = hand in), Due in the next 7 days (circle cycles stages incl. handed in, "ready to hand in" when done), Exams (day-count tiles + `ExamCountdown`).
+- Streak (`computeStreak` in `progress.ts`, tallies built in `getToday`): consecutive days, up to today, on which every lecture occurrence and every exercise planned that day (`plannedDates`) is completed; days with nothing scheduled are skipped; today counts once complete and never breaks the streak while open, however much of it is left (only unfinished earlier days break it; tested in `tests/service.test.ts`). Also returns `best` (longest run this semester) and `today` (`done | open | empty`). Derived from the current state, so checking off something late repairs past days.
 
 ## Subjects view notes
 
-- Each card lists weekly lectures and exercises. `subjectOverview` returns the subject's live `exercises` (ordered by deadline); series rows expand (chevron; collapsed by default, component state only) to show their occurrences, standalone exercises are listed below. Every exercise row opens `ExerciseDialog`.
+- Each card starts with its exams (`ExamRow`: title, kind unless the title already says it, date · time · room, `ExamCountdown`: accent, amber within 7 days, red on the day, muted once past; click opens `ExamDialog`; "+ Exam"), then weekly lectures and exercises (checklist progress on exercise rows). `subjectOverview` returns the subject's live `exercises` (ordered by deadline); series rows expand (chevron; collapsed by default, component state only) to show their occurrences, standalone exercises are listed below. Every exercise row opens `ExerciseDialog`.
 
 ## Outstanding view notes
 
-- Lists every uncompleted exercise and every past/today lecture occurrence that isn't completed, grouped by date.
-- The "open exercises" stat counts only uncompleted exercises planned for today or earlier, or due within the next 7 days (`counts` in `OutstandingView.tsx`).
+- Lists every exercise not handed in yet (including done ones) and every past/today lecture occurrence that isn't completed, grouped by date. The per-exercise select offers the four stages; handing in removes the row (toast + Undo).
+- The "open exercises" stat counts only not-handed-in exercises planned for today or earlier, or due within the next 7 days (`counts` in `OutstandingView.tsx`).
 
 ## Timetable UI notes
 
@@ -133,8 +144,11 @@ Trash: rows get `deleted_at` + `trash_batch_id` (one batch per user action, list
 - Initial scroll per week (`bestTopMinute` in `src/renderer/timetableScroll.ts`, tested in `tests/timetable-scroll.test.ts`): once that week's data has loaded (`data.weekStart === weekStart`, once per semester+week), pick the top that shows the most lectures fully, then the most lecture minutes, then closest to 07:45 (08:00 minus 15 min padding). Visible height = `.tt-scroll` height minus the sticky block. Data refreshes within the same week don't re-scroll.
 - Day column widths come from `--days`: weight 1, 1.6 (two lectures side by side), 2.2 (three+), 0.7 for completely empty days.
 - Lecture cards: top-aligned, check mark floated top right, text wraps (no mid-word breaks); hover expands a card to show all text. Past uncompleted lectures get a subtle amber outline (`.missed`).
-- Deadline cards ("Due" row): the flag/check icon (`.due-check`) toggles completed ↔ in progress; the rest of the card opens the editor. Planned cards: the status circle cycles the three statuses.
+- Deadline cards ("Due" row): the flag/check icon (`.due-check`) toggles handed in (`.handed-in`, check) ↔ not handed in; done but not handed in shows `.ready` (green, "Done · ready to hand in"). Ticking a planned card never hands in; the rest of the card opens the editor. Exams sit first in the "Due" row (`.ex-chip.exam`, subject-tinted, graduation cap, time · room; click/Enter opens `ExamDialog`, right-click Edit/Delete) and count for the day-column width. Planned cards: the status circle cycles the three work statuses (right-click menu: all four stages); with a checklist they show `ChecklistProgress` in a `.cl-btn` that opens `ChecklistPopover` (portaled, ticks save immediately via `useChecklistToggle`; closes on outside click, Esc, scroll, blur/resize; "Edit steps…" opens the editor).
+- No flash on week change: everything week-dependent renders from `shownWeek = data?.weekStart ?? weekStart`, so the previous week stays on screen until the new week's data has loaded (rendering the old data against the new week's days used to show an empty grid for a frame). Navigation (buttons, ← →, T) still steps from `weekStart`.
 - Week dropdown (`WeekPicker`, custom listbox since native `<option>`s can't show icons): per-week `StatusIcon` from `weekStatus` — completed (everything done), in progress (anything done or an exercise started), not started; no icon for empty weeks. While open it swallows ↑ ↓ Enter Esc so the timetable's ← → shortcuts don't fire.
 - Date jump: an `.icon-btn` that opens a `DatePopover` in `weeks` mode (shown week selected, semester tinted); picking any day shows its week; "This week" scrolls the calendar to today.
+- Cross-week drag: while a card is dragged, `.tt-edge` strips appear (left = the gutter, right = the last `EDGE_PX` of the timetable; `pointer-events: none`, so drops still reach the cells underneath). A document-level `dragover` sets `edge`; holding it switches the week every `EDGE_DWELL_MS` (`.tt-edge-fill` animates the wait; nothing happens if no dragover arrived for 500 ms, e.g. after leaving the window). The dragged card unmounts with the old week, so its `dragend` never arrives: after a switch, the first `mousemove`/`mousedown` (none fire during a drag) clears the drag state. The drop calls `moveExercise(id, from, to)` with `from` in the original week.
+- The "To do" and "Due" rows share `min-height: 44px` per cell, so they're equally tall when empty.
 - Saturday/Sunday share `--weekend` tint; today is marked only in the header.
 - Before finishing UI work: `npm run typecheck && npm test`, then check visually (build + launch), then `npm run dist` (see "Always build the installer").

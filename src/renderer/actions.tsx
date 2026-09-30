@@ -1,8 +1,8 @@
 import { api } from './api';
 import { Confirm, ScopeChooser, useUi } from './ui';
 import { dateInWeek, formatDate, type ISODate } from '../shared/dates';
-import type { DeleteResult, Exercise, Id, Lecture, Semester, Subject } from '../shared/types';
-import { biggerCelebration, celebrationFor, weekProgress, type CelebrationKind } from '../shared/progress';
+import type { DeleteResult, Exam, Exercise, ExerciseStage, ExerciseStatus, Id, Lecture, Semester, Subject } from '../shared/types';
+import { biggerCelebration, celebrationFor, exerciseWeeks, weekProgress, type CelebrationKind } from '../shared/progress';
 import { playDing } from './sound';
 
 /**
@@ -26,6 +26,63 @@ export function useWeekCompletion(semesterId: Id) {
     }
     if (best) ui.celebrate(best.kind, best.week);
   };
+}
+
+/**
+ * Exercise progress, shared by all views. The work status belongs to the planned ("To do") days;
+ * handing in belongs to the deadline, so finishing the work doesn't tick off the deadline.
+ * Both run through useWeekCompletion when something gets checked off.
+ */
+export function useExerciseProgress(semesterId: Id) {
+  const ui = useUi();
+  const completing = useWeekCompletion(semesterId);
+  const undo = (e: Exercise) => ({
+    label: 'Undo',
+    run: () => void ui.run(() => (e.handedIn ? api.setExerciseHandedIn(e.id, true) : api.setExerciseStatus(e.id, e.status))),
+  });
+
+  const setStatus = (e: Exercise, status: ExerciseStatus, opts: { toast?: boolean } = {}) =>
+    ui.run(async () => {
+      const done = status === 'completed' && e.status !== 'completed';
+      await completing(done ? exerciseWeeks(e.plannedDates) : [], () => api.setExerciseStatus(e.id, status));
+      if (done && opts.toast) ui.toast(`"${e.title}" done`, { kind: 'success', action: undo(e) });
+    });
+
+  const setHandedIn = (e: Exercise, handedIn: boolean) =>
+    ui.run(async () => {
+      await completing(handedIn ? exerciseWeeks(e.plannedDates) : [], () => api.setExerciseHandedIn(e.id, handedIn));
+      if (handedIn) ui.toast(`"${e.title}" handed in`, { kind: 'success', action: undo(e) });
+    });
+
+  /** For pickers that offer all four stages. */
+  const setStage = (e: Exercise, stage: ExerciseStage, opts: { toast?: boolean } = {}) =>
+    stage === 'handed_in'
+      ? setHandedIn(e, true)
+      : e.handedIn && stage === 'completed'
+        ? setHandedIn(e, false)
+        : setStatus(e, stage, opts);
+
+  return { setStatus, setHandedIn, setStage };
+}
+
+/** Ticks a checklist step; once every step is done, offers to mark the exercise done (with celebration). */
+export function useChecklistToggle(semesterId: Id) {
+  const ui = useUi();
+  const completing = useWeekCompletion(semesterId);
+  return (itemId: Id, done: boolean) =>
+    ui.run(async () => {
+      const e = await api.setChecklistItemDone(itemId, done);
+      if (done && e.status !== 'completed' && e.checklist.every((c) => c.done)) {
+        ui.toast(`All steps of "${e.title}" are done`, {
+          kind: 'success',
+          action: {
+            label: 'Mark done',
+            run: () => void ui.run(() => completing(exerciseWeeks(e.plannedDates), () => api.setExerciseStatus(e.id, 'completed'))),
+          },
+        });
+      }
+      return e;
+    });
 }
 
 /** Delete flows shared by all views. Everything goes to the trash and can be undone. */
@@ -126,6 +183,10 @@ export function useActions() {
         />
       ));
       return scope ? moved(await ui.run(() => api.deleteExercise(e.id, scope))) : false;
+    },
+
+    async deleteExam(e: Exam): Promise<boolean> {
+      return moved(await ui.run(() => api.deleteExam(e.id)));
     },
   };
 }

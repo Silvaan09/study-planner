@@ -146,6 +146,19 @@ export function formatWeekRange(weekStart: ISODate): string {
   return `${formatDate(weekStart)} – ${formatDate(end)} ${b.getUTCFullYear()}`;
 }
 
+/** "Today", "Tomorrow", "in 12 days", "in 5 weeks, 2 days", "Yesterday", "3 days ago": how far `date` is from `today`. */
+export function formatCountdown(today: ISODate, date: ISODate): string {
+  const n = diffDays(today, date);
+  if (n === 0) return 'Today';
+  if (n === 1) return 'Tomorrow';
+  if (n === -1) return 'Yesterday';
+  if (n < 0) return `${-n} days ago`;
+  if (n < 21) return `in ${n} days`;
+  const weeks = Math.floor(n / 7);
+  const days = n % 7;
+  return `in ${weeks} weeks${days ? `, ${days} day${days === 1 ? '' : 's'}` : ''}`;
+}
+
 /** ISO-8601 calendar week number. */
 export function isoWeekNumber(date: ISODate): number {
   const thursday = addDays(date, 4 - weekday(date));

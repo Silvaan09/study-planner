@@ -2,10 +2,12 @@ import { Fragment, useState, type CSSProperties } from 'react';
 import { api } from '../api';
 import { useLoad, useUi } from '../ui';
 import { useActions } from '../actions';
-import { WEEKDAY_SHORT, formatDate } from '../../shared/dates';
-import type { Exercise, Id, Semester, Subject } from '../../shared/types';
-import { ExerciseDialog, LectureDialog, SubjectDialog } from '../dialogs';
+import { WEEKDAY_SHORT, formatDate, todayISO } from '../../shared/dates';
+import { EXERCISE_STAGE_LABEL, exerciseStage, type Exercise, type Id, type Semester, type Subject } from '../../shared/types';
+import { ExamDialog, ExerciseDialog, LectureDialog, SubjectDialog } from '../dialogs';
 import { FocusPill } from '../components/FocusPill';
+import { ExamRow } from '../components/ExamRow';
+import { ChecklistProgress } from '../components/Checklist';
 import { Book, ChevronDown, ChevronRight, Flag, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
 
 export function SubjectsView({ semester, focus, clearFocus }: { semester: Semester; focus: Subject | null; clearFocus: () => void }) {
@@ -13,6 +15,7 @@ export function SubjectsView({ semester, focus, clearFocus }: { semester: Semest
   const actions = useActions();
   const { data } = useLoad(() => api.subjectOverview(semester.id), [semester.id]);
   const subjects: Subject[] = (data ?? []).map((o) => o.subject);
+  const today = todayISO();
 
   const [expanded, setExpanded] = useState<ReadonlySet<Id>>(new Set());
 
@@ -28,12 +31,13 @@ export function SubjectsView({ semester, focus, clearFocus }: { semester: Semest
   const exerciseRow = (e: Exercise) => (
     <button
       key={e.id}
-      className={`row-item row-exercise status-${e.status}`}
-      title="Edit exercise"
+      className={`row-item row-exercise status-${exerciseStage(e)}`}
+      title={`${EXERCISE_STAGE_LABEL[exerciseStage(e)]} — edit exercise`}
       onClick={() => ui.dialog((close) => <ExerciseDialog semester={semester} subjects={subjects} exerciseId={e.id} close={close} />)}
     >
-      <StatusIcon status={e.status} size={13} />
+      <StatusIcon status={exerciseStage(e)} size={13} />
       <span className="row-title">{e.title}</span>
+      <ChecklistProgress exercise={e} compact />
       <span className="row-due">
         <Flag size={11} /> {formatDate(e.deadlineDate, { weekday: true })}
       </span>
@@ -45,7 +49,7 @@ export function SubjectsView({ semester, focus, clearFocus }: { semester: Semest
       <header className="view-header">
         <div className="week-title">
           <h1>Subjects</h1>
-          <div className="week-sub">{semester.name} — subjects, weekly lectures and exercise series</div>
+          <div className="week-sub">{semester.name} — subjects, exams, weekly lectures and exercises</div>
         </div>
         <span className="spacer" />
         <FocusPill subject={focus} onClear={clearFocus} />
@@ -66,7 +70,7 @@ export function SubjectsView({ semester, focus, clearFocus }: { semester: Semest
       )}
 
       <div className="subject-grid">
-        {(data ?? []).map(({ subject, lectures, series, exercises, exerciseCount }) => (
+        {(data ?? []).map(({ subject, lectures, series, exercises, exerciseCount, exams }) => (
           <article key={subject.id} className={`subject-card ${focus && focus.id !== subject.id ? 'dimmed' : ''}`} style={{ '--c': subject.color } as CSSProperties}>
             <header>
               <span className="subject-swatch" />
@@ -79,6 +83,25 @@ export function SubjectsView({ semester, focus, clearFocus }: { semester: Semest
                 <Trash size={15} />
               </button>
             </header>
+
+            <section>
+              <h3>Exams</h3>
+              {exams.length === 0 && <p className="muted small">No exams yet. Add midterms, endterms and finals to see a countdown.</p>}
+              {exams.map((x) => (
+                <ExamRow
+                  key={x.id}
+                  exam={x}
+                  today={today}
+                  onClick={() => ui.dialog((close) => <ExamDialog semester={semester} subjects={subjects} examId={x.id} close={close} />)}
+                />
+              ))}
+              <button
+                className="btn btn-ghost small"
+                onClick={() => ui.dialog((close) => <ExamDialog semester={semester} subjects={subjects} defaults={{ subjectId: subject.id }} close={close} />)}
+              >
+                <Plus size={13} /> Exam
+              </button>
+            </section>
 
             <section>
               <h3>Weekly lectures</h3>

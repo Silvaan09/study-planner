@@ -15,27 +15,32 @@ Windows desktop app · works fully offline · your data stays on your PC
 
 ## Features
 
-- **Weekly timetable**: Monday to Sunday in 24-hour time, showing lectures, the exercises you plan to work on and hand-in deadlines in one view.
+- **Today at a glance**: what's happening now and next, today's lectures and planned exercises, anything overdue, what's due this week, and your streak of days with everything done.
+- **Weekly timetable**: Monday to Sunday in 24-hour time, showing lectures, the exercises you plan to work on, hand-in deadlines and exams in one view.
 - **Lecture tracking**: lectures repeat every week of the semester. Click a lecture to mark that week's session as completed.
-- **Exercise planning**: every exercise has a deadline and one or more days you plan to work on it. Drag an exercise to another day to reschedule it; the app won't let you plan past the deadline.
+- **Exercise planning**: every exercise has a deadline and one or more days you plan to work on it. Drag an exercise to another day to reschedule it (hold it at the left or right edge of the timetable to move it into another week); the app won't let you plan past the deadline. Finishing the work and handing it in are ticked off separately, so an exercise you've worked through stays on your list until it's submitted.
+- **Checklists**: split an exercise into steps and tick them off as you go, right from the timetable or the Today page.
+- **Exams with a countdown**: add midterms, endterms and finals to each subject and see how many days are left.
 - **Recurring exercises**: create a whole series at once (`Problem Set 01`, `02`, …), weekly or every few weeks. You can change one occurrence, the following ones, or the whole series.
 - **Focus on one subject**: click a subject in the sidebar to grey out everything else in the timetable and see only its open items.
 - **Little celebrations**: a soft ding for every lecture or exercise you check off, a burst of confetti when you've completed all lectures or all exercises of a week, and a bigger one when the whole week is done. The sound can be turned off in Settings.
-- **Outstanding list**: everything you haven't finished yet, oldest first, with overdue exercises highlighted.
+- **Outstanding list**: every lecture you haven't completed and every exercise you haven't handed in yet, oldest first, with overdue exercises highlighted.
 - **Multiple semesters**: each semester and its subjects stay separate, and old semesters remain available.
 - **Safe with your data**: deleted items go to a trash bin first, the database is backed up automatically, and updates keep everything you've entered.
 
 ## Screenshots
 
-| Plan recurring exercises | See what's still open |
+![Today page with the streak, the next lecture, today's schedule and to-dos, upcoming deadlines and exam countdowns](docs/screenshots/today.png)
+
+| Plan recurring exercises with checklists | See what's still open |
 |---|---|
-| ![Creating a recurring exercise planned every Thursday, with the date picker open](docs/screenshots/exercise-dialog.png) | ![Outstanding list with an overdue exercise](docs/screenshots/outstanding.png) |
+| ![Creating a recurring exercise planned every Thursday with a three-step checklist, the date picker open](docs/screenshots/exercise-dialog.png) | ![Outstanding list with an overdue exercise](docs/screenshots/outstanding.png) |
 
 | Focus on one subject | Manage your subjects |
 |---|---|
-| ![Timetable with only Mathematics highlighted and the other subjects greyed out](docs/screenshots/subject-focus.png) | ![Subjects overview with weekly lectures and an expanded exercise series](docs/screenshots/subjects.png) |
+| ![Timetable with only Mathematics highlighted and the other subjects greyed out](docs/screenshots/subject-focus.png) | ![Subjects overview with exam countdowns, weekly lectures and an expanded exercise series](docs/screenshots/subjects.png) |
 
-![Confetti and a "Week complete!" message after checking off the last exercise of the week](docs/screenshots/week-complete.png)
+![Confetti and a "Week complete!" message after checking off the last lecture of the week](docs/screenshots/week-complete.png)
 
 ## Installation
 
