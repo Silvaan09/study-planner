@@ -2,7 +2,7 @@ import { useMemo, type CSSProperties } from 'react';
 import { api } from '../api';
 import { useLoad, useUi } from '../ui';
 import { addDays, diffDays, formatDate, startOfWeek, todayISO, type ISODate } from '../../shared/dates';
-import { EXERCISE_STAGES, EXERCISE_STAGE_LABEL, exerciseStage, type ExerciseStage, type OutstandingItem, type Semester, type Subject } from '../../shared/types';
+import { EXERCISE_STAGE_LABEL, exerciseDueBy, exerciseStage, exerciseStages, type ExerciseStage, type OutstandingItem, type Semester, type Subject } from '../../shared/types';
 import { ExerciseDialog } from '../dialogs';
 import { useExerciseProgress, useWeekCompletion } from '../actions';
 import { Alert, Calendar, Check, Flag, StatusIcon } from '../components/Icons';
@@ -62,7 +62,7 @@ export function OutstandingView({
     const dueLimit = addDays(today, 7);
     return {
       overdue: items.filter((i) => i.kind === 'exercise' && i.overdue).length,
-      exercises: items.filter((i) => i.kind === 'exercise' && (i.exercise.plannedDate <= today || i.exercise.deadlineDate <= dueLimit)).length,
+      exercises: items.filter((i) => i.kind === 'exercise' && (i.exercise.plannedDate <= today || (i.exercise.deadlineDate !== null && i.exercise.deadlineDate <= dueLimit))).length,
       lectures: items.filter((i) => i.kind === 'lecture').length,
     };
   }, [items, today]);
@@ -150,17 +150,17 @@ export function OutstandingView({
               }
               const e = item.exercise;
               const s = subjectById.get(e.subjectId);
-              const late = diffDays(e.deadlineDate, today);
+              const late = diffDays(exerciseDueBy(e), today);
               const left = -late;
               return (
                 <div key={`e${e.id}`} className={`out-item ${item.overdue ? 'overdue' : ''}`} style={{ '--c': s?.color } as CSSProperties}>
                   <select
                     className={`status-select status-${e.status}`}
                     value={exerciseStage(e)}
-                    onChange={(ev) => void progress.setStage(e, ev.target.value as ExerciseStage)}
-                    title="Status — choose “Handed in” once it's submitted"
+                    onChange={(ev) => void progress.setStage(e, ev.target.value as ExerciseStage, { toast: !e.deadlineDate })}
+                    title={e.deadlineDate ? "Status — choose “Handed in” once it's submitted" : 'Status — no deadline, so it is finished once done'}
                   >
-                    {EXERCISE_STAGES.map((st) => (
+                    {exerciseStages(e).map((st) => (
                       <option key={st} value={st}>
                         {EXERCISE_STAGE_LABEL[st]}
                       </option>
@@ -179,8 +179,15 @@ export function OutstandingView({
                         .slice(0, 3)
                         .map((d) => formatDate(d, { weekday: true }))
                         .join(', ')}
-                      {e.plannedDates.length > 3 && ` +${e.plannedDates.length - 3} more`} ·{' '}
-                      <Flag size={11} /> due {formatDate(e.deadlineDate, { weekday: true })}
+                      {e.plannedDates.length > 3 && ` +${e.plannedDates.length - 3} more`}
+                      {e.deadlineDate ? (
+                        <>
+                          {' · '}
+                          <Flag size={11} /> due {formatDate(e.deadlineDate, { weekday: true })}
+                        </>
+                      ) : (
+                        ' · no deadline'
+                      )}
                       {e.checklist.length > 0 && e.status !== 'completed' && (
                         <>
                           {' · '}
@@ -193,7 +200,7 @@ export function OutstandingView({
                     <span className="badge badge-danger">
                       <Alert size={12} /> Overdue · {plural(late, 'day')}
                     </span>
-                  ) : left <= 2 ? (
+                  ) : !e.deadlineDate ? null : left <= 2 ? (
                     <span className="badge badge-warn">{left === 0 ? 'Due today' : left === 1 ? 'Due tomorrow' : 'Due in 2 days'}</span>
                   ) : (
                     <span className="badge">Due in {plural(left, 'day')}</span>

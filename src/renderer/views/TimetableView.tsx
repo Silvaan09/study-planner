@@ -19,11 +19,12 @@ import {
 } from '../../shared/dates';
 import { weekProgress } from '../../shared/progress';
 import {
-  EXERCISE_STAGES,
+  exerciseDueBy,
   EXERCISE_STAGE_LABEL,
   EXERCISE_STATUS_LABEL,
   examTitle,
   exerciseStage,
+  exerciseStages,
   type Exam,
   type Exercise,
   type ExerciseStatus,
@@ -105,8 +106,8 @@ export function TimetableView({
   const today = todayISO(now);
   const { data } = useLoad(() => api.getWeek(semester.id, weekStart), [semester.id, weekStart]);
   const [menu, setMenu] = useState<MenuState | null>(null);
-  // The exercise being dragged and which of its planned dates is being moved.
-  const [dragging, setDragging] = useState<{ e: Exercise; from: ISODate } | null>(null);
+  // The exercise being dragged: one of its planned dates (a "To do" card) or its deadline (a "Due" card).
+  const [dragging, setDragging] = useState<{ e: Exercise; from: ISODate; kind: 'planned' | 'deadline' } | null>(null);
   const [dropDay, setDropDay] = useState<ISODate | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const dateBtnRef = useRef<HTMLButtonElement>(null);
@@ -238,7 +239,7 @@ export function TimetableView({
       x: ev.clientX,
       y: ev.clientY,
       items: [
-        ...EXERCISE_STAGES.map((s) => ({
+        ...exerciseStages(e).map((s) => ({
           label: EXERCISE_STAGE_LABEL[s],
           icon: <StatusIcon status={s} size={14} />,
           disabled: exerciseStage(e) === s,
@@ -264,8 +265,14 @@ export function TimetableView({
     });
   };
 
-  // ---- drag & drop of planned exercises between days
-  const canDrop = (day: ISODate) => dragging !== null && day <= dragging.e.deadlineDate;
+  // ---- drag & drop of planned days and deadlines between days
+  /** Planned days can't go after the deadline, and the deadline can't go before the last planned day. */
+  const canDrop = (day: ISODate) => {
+    if (!dragging) return false;
+    const { e, kind } = dragging;
+    if (kind === 'planned') return e.deadlineDate === null || day <= e.deadlineDate;
+    return day >= e.plannedDates[e.plannedDates.length - 1];
+  };
   const dropProps = (day: ISODate) => ({
     onDragOver: (ev: DragEvent) => {
       if (!dragging) return;
@@ -285,7 +292,23 @@ export function TimetableView({
       setDropDay(null);
       if (!drag || drag.from === day) return;
       const ex = drag.e;
-      if (day > ex.deadlineDate) {
+      if (drag.kind === 'deadline') {
+        const last = ex.plannedDates[ex.plannedDates.length - 1];
+        if (day < last) {
+          ui.toast(`"${ex.title}" is planned for ${formatDate(last, { weekday: true })} — the deadline can't be before that.`, { kind: 'error' });
+          return;
+        }
+        const setDeadline = (d: ISODate) => api.updateExercise({ id: ex.id, scope: 'this', changes: { deadlineDate: d } });
+        void ui.run(async () => {
+          await setDeadline(day);
+          ui.toast(`Moved the deadline of "${ex.title}" to ${formatDate(day, { weekday: true })}`, {
+            kind: 'success',
+            action: { label: 'Undo', run: () => void ui.run(() => setDeadline(drag.from)) },
+          });
+        });
+        return;
+      }
+      if (ex.deadlineDate !== null && day > ex.deadlineDate) {
         ui.toast(`"${ex.title}" is due ${formatDate(ex.deadlineDate, { weekday: true })} — it can't be planned after its deadline.`, { kind: 'error' });
         return;
       }
@@ -534,20 +557,20 @@ export function TimetableView({
             return (
               <div key={d} className={`tt-cell ${dayClass(d)}`} {...dropProps(d)} onDoubleClick={() => newExercise(d)}>
                 {list.map((e) => {
-                  const overdue = e.status !== 'completed' && e.deadlineDate < today;
-                  const dueIn = diffDays(d, e.deadlineDate);
+                  const overdue = e.status !== 'completed' && exerciseDueBy(e) < today;
+                  const dueIn = e.deadlineDate === null ? null : diffDays(d, e.deadlineDate);
                   const sessions = e.plannedDates.length;
                   const session = e.plannedDates.indexOf(d) + 1;
                   return (
                     <div
                       key={e.id}
-                      className={`ex-chip planned status-${e.status} ${overdue ? 'overdue' : ''} ${dragging?.e.id === e.id && dragging.from === d ? 'dragging' : ''} ${dim(e.subjectId)}`}
+                      className={`ex-chip planned status-${e.status} ${overdue ? 'overdue' : ''} ${dragging?.kind === 'planned' && dragging.e.id === e.id && dragging.from === d ? 'dragging' : ''} ${dim(e.subjectId)}`}
                       style={{ '--c': colorOf(e.subjectId) } as CSSProperties}
                       draggable
                       onDragStart={(ev) => {
                         ev.dataTransfer.setData('text/plain', String(e.id));
                         ev.dataTransfer.effectAllowed = 'move';
-                        setDragging({ e, from: d });
+                        setDragging({ e, from: d, kind: 'planned' });
                       }}
                       onDragEnd={() => {
                         setDragging(null);
@@ -555,7 +578,7 @@ export function TimetableView({
                       }}
                       onClick={() => openExercise(e.id)}
                       onContextMenu={(ev) => exerciseMenu(ev, e)}
-                      title={`${e.title} (${subjectName(e.subjectId)}) — ${EXERCISE_STATUS_LABEL[e.status]}\nDeadline: ${formatDate(e.deadlineDate, { weekday: true, year: true })}${sessions > 1 ? `\nPlanned on ${sessions} days: ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}` : ''}\nDrag to another day to move this session (hold it at the left or right edge to change weeks).`}
+                      title={`${e.title} (${subjectName(e.subjectId)}) — ${EXERCISE_STATUS_LABEL[e.status]}\nDeadline: ${e.deadlineDate ? formatDate(e.deadlineDate, { weekday: true, year: true }) : 'none'}${sessions > 1 ? `\nPlanned on ${sessions} days: ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}` : ''}\nDrag to another day to move this session (hold it at the left or right edge to change weeks).`}
                     >
                       <button
                         className="status-btn"
@@ -575,11 +598,15 @@ export function TimetableView({
                         </span>
                         <span className={`ex-meta ${overdue ? 'danger' : ''}`}>
                           {sessions > 1 && `Session ${session} of ${sessions} · `}
-                          {overdue
-                            ? `Overdue since ${formatDate(e.deadlineDate, { weekday: true })}`
-                            : dueIn === 0
-                              ? 'Due the same day'
-                              : `Due ${formatDate(e.deadlineDate, { weekday: dueIn < 7 })}`}
+                          {e.deadlineDate === null
+                            ? overdue
+                              ? `Overdue · was planned ${formatDate(exerciseDueBy(e), { weekday: true })}`
+                              : 'No deadline'
+                            : overdue
+                              ? `Overdue since ${formatDate(e.deadlineDate, { weekday: true })}`
+                              : dueIn === 0
+                                ? 'Due the same day'
+                                : `Due ${formatDate(e.deadlineDate, { weekday: dueIn! < 7 })}`}
                         </span>
                         {e.checklist.length > 0 && e.status !== 'completed' && (
                           <button
@@ -601,7 +628,7 @@ export function TimetableView({
                     </div>
                   );
                 })}
-                {dragging && dropDay === d && !canDrop(d) && <div className="drop-note">After the deadline</div>}
+                {dragging?.kind === 'planned' && dropDay === d && !canDrop(d) && <div className="drop-note">After the deadline</div>}
               </div>
             );
           })}
@@ -648,12 +675,22 @@ export function TimetableView({
                       key={e.id}
                       role="button"
                       tabIndex={0}
-                      className={`ex-chip due ${e.handedIn ? 'handed-in' : ready ? 'ready' : ''} ${overdue ? 'overdue' : ''} ${dim(e.subjectId)}`}
+                      className={`ex-chip due ${e.handedIn ? 'handed-in' : ready ? 'ready' : ''} ${overdue ? 'overdue' : ''} ${dragging?.kind === 'deadline' && dragging.e.id === e.id ? 'dragging' : ''} ${dim(e.subjectId)}`}
                       style={{ '--c': colorOf(e.subjectId) } as CSSProperties}
+                      draggable
+                      onDragStart={(ev) => {
+                        ev.dataTransfer.setData('text/plain', String(e.id));
+                        ev.dataTransfer.effectAllowed = 'move';
+                        setDragging({ e, from: d, kind: 'deadline' });
+                      }}
+                      onDragEnd={() => {
+                        setDragging(null);
+                        setDropDay(null);
+                      }}
                       onClick={() => openExercise(e.id)}
                       onKeyDown={(ev) => ev.key === 'Enter' && openExercise(e.id)}
                       onContextMenu={(ev) => exerciseMenu(ev, e)}
-                      title={`Deadline: ${e.title} (${subjectName(e.subjectId)}) — ${EXERCISE_STAGE_LABEL[exerciseStage(e)]}\nPlanned for ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}`}
+                      title={`Deadline: ${e.title} (${subjectName(e.subjectId)}) — ${EXERCISE_STAGE_LABEL[exerciseStage(e)]}\nPlanned for ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}\nDrag to another day to move the deadline (hold it at the left or right edge to change weeks).`}
                     >
                       <button
                         className="due-check"
@@ -673,6 +710,7 @@ export function TimetableView({
                     </div>
                   );
                 })}
+                {dragging?.kind === 'deadline' && dropDay === d && !canDrop(d) && <div className="drop-note">Before a planned day</div>}
               </div>
             );
           })}

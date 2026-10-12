@@ -16,6 +16,8 @@ import {
   EXAM_KINDS,
   EXERCISE_STATUSES,
   examTitle,
+  exerciseDueBy,
+  exerciseSettled,
   type ChecklistItem,
   type ChecklistItemInput,
   type DeleteResult,
@@ -174,15 +176,20 @@ export class StudyService {
     return d;
   }
 
-  /** Planned dates must all be on or before the deadline. */
-  private checkPlanned(planned: ISODate[], deadline: ISODate, title?: string): void {
+  /** Planned dates must all be on or before the deadline (if there is one). */
+  private checkPlanned(planned: ISODate[], deadline: ISODate | null, title?: string): void {
     const latest = planned[planned.length - 1];
-    if (latest > deadline) {
+    if (deadline !== null && latest > deadline) {
       const who = title ? ` for "${title}"` : '';
       throw new UserError(
         `The planned date${who} (${formatDate(latest, { weekday: true })}) can't be after the deadline (${formatDate(deadline, { weekday: true })}).`,
       );
     }
+  }
+
+  /** A deadline date, or null for none. */
+  private deadlineInput(value: unknown): ISODate | null {
+    return value === null || value === undefined || value === '' ? null : this.date(value, 'Deadline');
   }
 
   /** Validates, de-duplicates and sorts a list of planned dates. */
@@ -314,7 +321,7 @@ export class StudyService {
       const exercises = this.toExercises(
         this.all(
           `SELECT x.* FROM ${EXERCISE_FROM} WHERE x.subject_id = ? AND ${LIVE_EXERCISE}
-           ORDER BY x.deadline_date, x.planned_date, x.sequence_number, x.title COLLATE NOCASE`,
+           ORDER BY COALESCE(x.deadline_date, x.planned_date), x.planned_date, x.sequence_number, x.title COLLATE NOCASE`,
           subject.id,
         ),
       );
@@ -528,7 +535,7 @@ export class StudyService {
         description: r.description,
         plannedDate: plannedDates[0],
         plannedDates,
-        deadlineDate: r.deadline_date,
+        deadlineDate: r.deadline_date ?? null,
         status: r.status,
         handedIn: !!r.handed_in,
         checklist: checklists.get(r.id) ?? [],
@@ -614,7 +621,7 @@ export class StudyService {
       dates[0],
       e.deadlineDate,
       e.status,
-      e.handedIn ? 1 : 0,
+      e.handedIn && e.deadlineDate !== null ? 1 : 0,
       t,
       t,
     );
@@ -630,9 +637,9 @@ export class StudyService {
       const title = this.text(input.title, 'Exercise title');
       const description = this.text(input.description ?? '', 'Description', { max: MAX_DESCRIPTION, allowEmpty: true });
       const planned = this.plannedDatesInput(input.plannedDates);
-      const deadline = this.date(input.deadlineDate, 'Deadline');
+      const deadline = this.deadlineInput(input.deadlineDate);
       this.checkPlanned(planned, deadline);
-      const handedIn = this.handedIn(input.handedIn ?? false);
+      const handedIn = this.handedIn(input.handedIn ?? false) && deadline !== null;
       const status = handedIn ? 'completed' : this.status(input.status ?? 'not_started');
       const checklist = this.checklistInput(input.checklist ?? []);
 
@@ -678,7 +685,7 @@ export class StudyService {
             description,
             // The planned-date pattern repeats in every occurrence.
             plannedDates: planned.map((d) => addDays(d, 7 * interval * i)),
-            deadlineDate: addDays(deadline, 7 * interval * i),
+            deadlineDate: deadline && addDays(deadline, 7 * interval * i),
             status: i === 0 ? status : 'not_started',
             handedIn: i === 0 && handedIn,
             checklist: i === 0 ? checklist : checklist.map((c) => ({ text: c.text, done: false })),
@@ -709,7 +716,7 @@ export class StudyService {
             title: seriesTitle(series.baseTitle, num),
             description: last.description,
             plannedDates: last.plannedDates.map((d) => addDays(d, shift)),
-            deadlineDate: addDays(last.deadlineDate, shift),
+            deadlineDate: last.deadlineDate && addDays(last.deadlineDate, shift),
             status: 'not_started',
             handedIn: false,
             checklist: last.checklist.map((c) => ({ text: c.text, done: false })),
@@ -732,7 +739,7 @@ export class StudyService {
       dates[0],
       e.deadlineDate,
       e.status,
-      e.handedIn ? 1 : 0,
+      e.handedIn && e.deadlineDate !== null ? 1 : 0,
       JSON.stringify([...new Set(e.overrides)].sort()),
       this.stamp(),
       e.id,
@@ -763,7 +770,7 @@ export class StudyService {
       if (d.join() !== e.plannedDates.join()) c.plannedDates = d;
     }
     if (changes.deadlineDate !== undefined) {
-      const d = this.date(changes.deadlineDate, 'Deadline');
+      const d = this.deadlineInput(changes.deadlineDate);
       if (d !== e.deadlineDate) c.deadlineDate = d;
     }
     if (changes.status !== undefined) {
@@ -817,7 +824,13 @@ export class StudyService {
       if (conflicts.length > 0 && input.overridePolicy === undefined) return { status: 'conflicts', conflicts };
 
       const step = 7 * series.intervalWeeks;
-      const deadlineShift = c.deadlineDate !== undefined ? diffDays(e.deadlineDate, c.deadlineDate) : 0;
+      // A moved deadline shifts each occurrence's by as many days; adding one (or one to an occurrence without)
+      // puts it at the same position relative to the occurrence as on this exercise.
+      const newDeadline = (t: Exercise): ISODate | null => {
+        if (!c.deadlineDate) return null;
+        if (e.deadlineDate && t.deadlineDate) return addDays(t.deadlineDate, diffDays(e.deadlineDate, c.deadlineDate));
+        return addDays(c.deadlineDate, step * (t.sequenceNumber! - e.sequenceNumber!));
+      };
       const invalid: string[] = [];
       const updates: Exercise[] = [];
       const checklistWrites = new Map<Id, ChecklistItemInput[]>();
@@ -830,7 +843,7 @@ export class StudyService {
         if (apply.includes('subjectId')) u.subjectId = c.subjectId!;
         // Planned dates: the edited pattern, moved to each occurrence's position in the series.
         if (apply.includes('plannedDate')) u.plannedDates = c.plannedDates!.map((d) => addDays(d, step * (t.sequenceNumber! - e.sequenceNumber!)));
-        if (apply.includes('deadlineDate')) u.deadlineDate = addDays(t.deadlineDate, deadlineShift);
+        if (apply.includes('deadlineDate')) u.deadlineDate = newDeadline(t);
         if (t.id === e.id) {
           if (c.status !== undefined) u.status = c.status;
           if (c.handedIn !== undefined) u.handedIn = c.handedIn;
@@ -843,7 +856,7 @@ export class StudyService {
           const done = new Set(t.checklist.filter((i) => i.done).map((i) => i.text));
           checklistWrites.set(t.id, checklist!.map((i) => ({ text: i.text, done: done.has(i.text) })));
         }
-        if (u.plannedDates[u.plannedDates.length - 1] > u.deadlineDate) invalid.push(u.title);
+        if (u.deadlineDate !== null && u.plannedDates[u.plannedDates.length - 1] > u.deadlineDate) invalid.push(u.title);
         updates.push(u);
       }
       if (invalid.length > 0) {
@@ -877,6 +890,7 @@ export class StudyService {
   setExerciseHandedIn(id: Id, handedIn: boolean): void {
     const e = this.liveExercise(id);
     const h = this.handedIn(handedIn);
+    if (h && e.deadlineDate === null) throw new UserError(`"${e.title}" has no deadline, so there is nothing to hand in.`);
     this.run('UPDATE exercises SET status = ?, handed_in = ?, updated_at = ? WHERE id = ?', h ? 'completed' : e.status, h ? 1 : 0, this.stamp(), e.id);
   }
 
@@ -915,7 +929,10 @@ export class StudyService {
       const t = this.stamp();
       if (e.seriesId === null || scope === 'this') {
         const label = `Exercise "${e.title}"`;
-        const batch = this.newTrashBatch('exercise', label, `Due ${formatDate(e.deadlineDate, { weekday: true, year: true })}`);
+        const when = e.deadlineDate
+          ? `Due ${formatDate(e.deadlineDate, { weekday: true, year: true })}`
+          : `Planned ${formatDate(e.plannedDate, { weekday: true, year: true })}`;
+        const batch = this.newTrashBatch('exercise', label, when);
         this.run('UPDATE exercises SET deleted_at = ?, trash_batch_id = ? WHERE id = ?', t, batch, id);
         return { trashId: batch, label };
       }
@@ -1055,7 +1072,7 @@ export class StudyService {
          WHERE s.semester_id = ? AND ${LIVE_EXERCISE}
            AND (x.deadline_date BETWEEN ? AND ?
                 OR EXISTS (SELECT 1 FROM exercise_plan_dates p WHERE p.exercise_id = x.id AND p.date BETWEEN ? AND ?))
-         ORDER BY x.deadline_date, x.title`,
+         ORDER BY COALESCE(x.deadline_date, x.planned_date), x.title`,
         sem.id,
         ws,
         we,
@@ -1091,10 +1108,10 @@ export class StudyService {
     }
     const exercises = this.toExercises(
       this.all(`SELECT x.* FROM ${EXERCISE_FROM} WHERE s.semester_id = ? AND ${LIVE_EXERCISE} AND x.handed_in = 0`, sem.id),
-    );
-    for (const e of exercises) items.push({ kind: 'exercise', date: e.plannedDate, exercise: e, overdue: e.deadlineDate < t });
+    ).filter((e) => !exerciseSettled(e));
+    for (const e of exercises) items.push({ kind: 'exercise', date: e.plannedDate, exercise: e, overdue: exerciseDueBy(e) < t });
     const key = (i: OutstandingItem) =>
-      i.kind === 'lecture' ? `${i.date}|0|${i.occurrence.startTime}|${i.occurrence.title}` : `${i.date}|1|${i.exercise.deadlineDate}|${i.exercise.title}`;
+      i.kind === 'lecture' ? `${i.date}|0|${i.occurrence.startTime}|${i.occurrence.title}` : `${i.date}|1|${exerciseDueBy(i.exercise)}|${i.exercise.title}`;
     items.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
     return { subjects: this.listSubjects(sem.id), items };
   }
@@ -1105,7 +1122,7 @@ export class StudyService {
     const weekAhead = addDays(t, 7);
     const lectures = this.lectureOccurrences(sem, sem.startDate, weekAhead);
     const exercises = this.toExercises(
-      this.all(`SELECT x.* FROM ${EXERCISE_FROM} WHERE s.semester_id = ? AND ${LIVE_EXERCISE} ORDER BY x.deadline_date, x.title`, sem.id),
+      this.all(`SELECT x.* FROM ${EXERCISE_FROM} WHERE s.semester_id = ? AND ${LIVE_EXERCISE} ORDER BY COALESCE(x.deadline_date, x.planned_date), x.title`, sem.id),
     );
 
     // Streak: what was scheduled on each day up to today, and how much of it is done.
@@ -1121,15 +1138,15 @@ export class StudyService {
 
     const byTime = (a: LectureOccurrence, b: LectureOccurrence) =>
       a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime) || a.title.localeCompare(b.title);
-    const open = exercises.filter((e) => !e.handedIn);
+    const open = exercises.filter((e) => !exerciseSettled(e));
     return {
       today: t,
       subjects: this.listSubjects(sem.id),
       lectures: lectures.filter((o) => o.date === t).sort(byTime),
       upcomingLectures: lectures.filter((o) => o.date > t).sort(byTime),
       planned: exercises.filter((e) => e.plannedDates.includes(t)),
-      dueSoon: open.filter((e) => e.deadlineDate >= t && e.deadlineDate <= weekAhead),
-      overdue: open.filter((e) => e.deadlineDate < t),
+      dueSoon: open.filter((e) => e.deadlineDate !== null && e.deadlineDate >= t && e.deadlineDate <= weekAhead),
+      overdue: open.filter((e) => exerciseDueBy(e) < t).sort((a, b) => exerciseDueBy(a).localeCompare(exerciseDueBy(b))),
       missedLectures: lectures.filter((o) => o.date < t && !o.completed).sort(byTime),
       exams: this.exams(sem.id, { from: t }),
       streak: computeStreak(tallies, sem.startDate, t),

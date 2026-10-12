@@ -62,7 +62,10 @@ export function useExerciseProgress(semesterId: Id) {
         ? setHandedIn(e, false)
         : setStatus(e, stage, opts);
 
-  return { setStatus, setHandedIn, setStage };
+  /** Finishes it off for good: hands it in, or (without a deadline, nothing to hand in) marks it done. */
+  const settle = (e: Exercise) => (e.deadlineDate ? setHandedIn(e, true) : setStatus(e, 'completed', { toast: true }));
+
+  return { setStatus, setHandedIn, setStage, settle };
 }
 
 /** Ticks a checklist step; once every step is done, offers to mark the exercise done (with celebration). */
