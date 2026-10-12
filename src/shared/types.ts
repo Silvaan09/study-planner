@@ -17,6 +17,18 @@ export const EXERCISE_STAGE_LABEL: Record<ExerciseStage, string> = { ...EXERCISE
 export function exerciseStage(e: Pick<Exercise, 'status' | 'handedIn'>): ExerciseStage {
   return e.handedIn ? 'handed_in' : e.status;
 }
+/** The stages an exercise can be in: without a deadline there is nothing to hand in. */
+export function exerciseStages(e: Pick<Exercise, 'deadlineDate'>): ExerciseStage[] {
+  return e.deadlineDate ? EXERCISE_STAGES : EXERCISE_STATUSES;
+}
+/** Nothing left to do: handed in, or (without a deadline) done. */
+export function exerciseSettled(e: Pick<Exercise, 'deadlineDate' | 'status' | 'handedIn'>): boolean {
+  return e.deadlineDate ? e.handedIn : e.status === 'completed';
+}
+/** The last day before an unsettled exercise counts as overdue: its deadline, or without one its last planned day. */
+export function exerciseDueBy(e: Pick<Exercise, 'deadlineDate' | 'plannedDates'>): ISODate {
+  return e.deadlineDate ?? e.plannedDates[e.plannedDates.length - 1];
+}
 
 /** Scope for edits/deletes of recurring items. */
 export type Scope = 'this' | 'future' | 'all';
@@ -90,10 +102,11 @@ export interface Exercise {
   plannedDate: ISODate;
   /** Every day this exercise is planned to be worked on, sorted ascending (at least one). */
   plannedDates: ISODate[];
-  deadlineDate: ISODate;
+  /** null = no deadline: nothing to hand in; overdue once the last planned day has passed (see exerciseDueBy). */
+  deadlineDate: ISODate | null;
   /** Progress of the work itself (the planned "To do" days). */
   status: ExerciseStatus;
-  /** Handed in / dealt with by the deadline (the "Due" side). Implies status 'completed'. */
+  /** Handed in / dealt with by the deadline (the "Due" side). Implies status 'completed'; always false without a deadline. */
   handedIn: boolean;
   /** Optional sub-steps, in order. */
   checklist: ChecklistItem[];
@@ -195,9 +208,9 @@ export interface TodayData {
   upcomingLectures: LectureOccurrence[];
   /** Exercises planned for today, any status. */
   planned: Exercise[];
-  /** Uncompleted exercises due today or within the next 7 days, by deadline. */
+  /** Exercises not handed in with a deadline today or within the next 7 days, by deadline. */
   dueSoon: Exercise[];
-  /** Uncompleted exercises whose deadline has passed, oldest first. */
+  /** Unsettled exercises whose deadline (or, without one, last planned day) has passed, oldest first. */
   overdue: Exercise[];
   /** Past lecture occurrences (before today) that aren't completed. */
   missedLectures: LectureOccurrence[];
@@ -262,9 +275,10 @@ export interface ExerciseCreateInput {
   description: string;
   /** Days to work on it. For a recurring exercise, this pattern repeats in every occurrence. */
   plannedDates: ISODate[];
-  deadlineDate: ISODate;
+  /** null = no deadline. */
+  deadlineDate: ISODate | null;
   status?: ExerciseStatus;
-  /** Requires status 'completed' (or none: then it is set). Recurring: first occurrence only, like status. */
+  /** Ignored without a deadline. Requires status 'completed' (or none: then it is set). Recurring: first occurrence only, like status. */
   handedIn?: boolean;
   /** For a recurring exercise, every occurrence gets these steps (only the first keeps their done state). */
   checklist?: ChecklistItemInput[];
@@ -282,7 +296,8 @@ export interface ExerciseChanges {
   subjectId?: Id;
   /** For 'future'/'all': the same pattern is applied to each affected occurrence, shifted by its position in the series. */
   plannedDates?: ISODate[];
-  deadlineDate?: ISODate;
+  /** null removes the deadline (and clears handedIn). */
+  deadlineDate?: ISODate | null;
   /** Applies to this exercise only. A status other than 'completed' also clears handedIn. */
   status?: ExerciseStatus;
   /** Applies to this exercise only. true also sets status 'completed'. */
@@ -359,7 +374,7 @@ export interface StudyApi {
   setExerciseStatus(id: Id, status: ExerciseStatus): void;
   /** Handing in also marks the work completed; taking it back leaves the status as it is. */
   setExerciseHandedIn(id: Id, handedIn: boolean): void;
-  /** Quick reschedule (drag & drop) of one planned date. Always applies to this occurrence only. */
+  /** Quick reschedule (drag & drop) of one planned date. Always applies to this occurrence only. Deadlines move via updateExercise (scope 'this'). */
   moveExercise(id: Id, fromDate: ISODate, toDate: ISODate): Exercise;
   deleteExercise(id: Id, scope: Scope): DeleteResult;
   extendSeries(seriesId: Id, count: number): Exercise[];

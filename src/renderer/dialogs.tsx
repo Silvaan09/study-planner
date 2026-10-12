@@ -17,6 +17,7 @@ import {
   EXAM_KINDS,
   EXERCISE_STAGE_LABEL,
   EXERCISE_STAGES,
+  EXERCISE_STATUSES,
   exerciseStage,
   type ChecklistItemInput,
   type Exam,
@@ -331,10 +332,18 @@ export function LectureDialog({
 // ------------------------------------------------------------------ exercise
 
 /** Done = the work is finished; handed in = the deadline is dealt with too. */
-export function StatusPicker({ value, onChange }: { value: ExerciseStage; onChange: (s: ExerciseStage) => void }) {
+export function StatusPicker({
+  value,
+  onChange,
+  stages = EXERCISE_STAGES,
+}: {
+  value: ExerciseStage;
+  onChange: (s: ExerciseStage) => void;
+  stages?: ExerciseStage[];
+}) {
   return (
     <div className="segmented" role="radiogroup">
-      {EXERCISE_STAGES.map((s) => (
+      {stages.map((s) => (
         <button key={s} type="button" role="radio" aria-checked={value === s} className={`seg status-${s} ${value === s ? 'active' : ''}`} onClick={() => onChange(s)}>
           <StatusIcon status={s} size={14} /> {EXERCISE_STAGE_LABEL[s]}
         </button>
@@ -563,7 +572,8 @@ export function ExerciseDialog({
   const [seriesTitleText, setSeriesTitleText] = useState('');
   const [description, setDescription] = useState('');
   const [planned, setPlanned] = useState<ISODate[]>([initialPlanned]);
-  const [deadline, setDeadline] = useState(addDays(initialPlanned, 7));
+  // '' = no deadline.
+  const [deadline, setDeadline] = useState<ISODate | ''>(addDays(initialPlanned, 7));
   const [stage, setStage] = useState<ExerciseStage>('not_started');
   const status = stage === 'handed_in' ? 'completed' : stage;
   const handedIn = stage === 'handed_in';
@@ -582,7 +592,7 @@ export function ExerciseDialog({
       setTitle(e.title);
       setDescription(e.description);
       setPlanned(e.plannedDates);
-      setDeadline(e.deadlineDate);
+      setDeadline(e.deadlineDate ?? '');
       setStage(exerciseStage(e));
       setSteps(draftSteps(e.checklist));
       if (e.seriesId !== null) {
@@ -593,25 +603,30 @@ export function ExerciseDialog({
     });
   }, [exerciseId, isEdit]);
 
-  useEffect(() => {
-    if (!countTouched) setCount(defaultCount(deadline, semester.endDate, interval));
-  }, [deadline, interval, countTouched, semester.endDate]);
-
   const seriesScope = series !== null && scope !== 'this';
   const plannedDates = normalizeDates(planned);
   const latestPlanned = plannedDates[plannedDates.length - 1];
   const plannedValid = planned.length > 0 && planned.every(isValidISODate);
-  const dateError =
-    latestPlanned && isValidISODate(deadline) && latestPlanned > deadline ? "Planned days can't be after the deadline." : null;
+  const hasDeadline = isValidISODate(deadline);
+  const dateError = latestPlanned && hasDeadline && latestPlanned > deadline ? "Planned days can't be after the deadline." : null;
   const activeTitle = seriesScope ? seriesTitleText : title;
-  const valid = subjectId !== '' && activeTitle.trim() && plannedValid && isValidISODate(deadline) && !dateError && (!isEdit || exercise);
+  const valid = subjectId !== '' && activeTitle.trim() && plannedValid && !dateError && (!isEdit || exercise);
+  // Without a deadline there is nothing to hand in.
+  const stages = hasDeadline ? EXERCISE_STAGES : EXERCISE_STATUSES;
+  if (!hasDeadline && stage === 'handed_in') setStage('completed');
+
+  // The series runs until the end of the semester, counted from the deadline (or the last planned day).
+  const countFrom = hasDeadline ? deadline : (latestPlanned ?? '');
+  useEffect(() => {
+    if (!countTouched) setCount(defaultCount(countFrom, semester.endDate, interval));
+  }, [countFrom, interval, countTouched, semester.endDate]);
 
   const preview = useMemo(() => {
-    if (!repeat || !plannedValid || !isValidISODate(deadline)) return [];
+    if (!repeat || !plannedValid) return [];
     return Array.from({ length: Math.min(count, 3) }, (_, i) => ({
       title: `${title || 'Title'} ${String(firstNumber + i).padStart(2, '0')}`,
       planned: plannedDates.map((d) => formatDate(addDays(d, 7 * interval * i), { weekday: true })).join(', '),
-      due: addDays(deadline, 7 * interval * i),
+      due: hasDeadline ? addDays(deadline, 7 * interval * i) : null,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repeat, planned, deadline, count, title, firstNumber, interval]);
@@ -624,7 +639,7 @@ export function ExerciseDialog({
           title,
           description,
           plannedDates,
-          deadlineDate: deadline,
+          deadlineDate: hasDeadline ? deadline : null,
           status,
           handedIn,
           checklist: cleanSteps(steps),
@@ -645,7 +660,7 @@ export function ExerciseDialog({
     if (description !== e.description) changes.description = description;
     if (subjectId !== e.subjectId) changes.subjectId = subjectId as Id;
     if (plannedDates.join() !== e.plannedDates.join()) changes.plannedDates = plannedDates;
-    if (deadline !== e.deadlineDate) changes.deadlineDate = deadline;
+    if ((hasDeadline ? deadline : null) !== e.deadlineDate) changes.deadlineDate = hasDeadline ? deadline : null;
     if (status !== e.status) changes.status = status;
     if (handedIn !== e.handedIn) changes.handedIn = handedIn;
     const checklist = cleanSteps(steps);
@@ -757,18 +772,25 @@ export function ExerciseDialog({
           <PlannedDatesField dates={planned} deadline={deadline} onChange={setPlanned} />
           {repeat && plannedDates.length > 0 && <span className="field-hint">These days repeat in every occurrence of the series.</span>}
         </div>
-        <Field label="Deadline (hand-in)" error={dateError}>
+        <Field
+          label="Deadline (hand-in)"
+          error={dateError}
+          hint={hasDeadline ? undefined : "Optional. Without one it's only on the To do row, and overdue once its planned days have passed."}
+        >
           <DateField
             value={deadline}
             min={latestPlanned}
             marks={plannedDates.map((date) => ({ date, kind: 'planned' as const }))}
             onChange={setDeadline}
+            onClear={() => setDeadline('')}
+            clearLabel="Remove the deadline"
+            placeholder="No deadline"
           />
         </Field>
       </div>
 
       <Field label="Status">
-        <StatusPicker value={stage} onChange={setStage} />
+        <StatusPicker value={stage} onChange={setStage} stages={stages} />
       </Field>
 
       <div className="field">
@@ -815,11 +837,16 @@ export function ExerciseDialog({
                   <span key={p.title}>
                     {p.title}{' '}
                     <em>
-                      planned {p.planned} · due {formatDate(p.due, { weekday: true })}
+                      planned {p.planned}
+                      {p.due && ` · due ${formatDate(p.due, { weekday: true })}`}
                     </em>
                   </span>
                 ))}
-                {count > 3 && <span className="muted">… {count - 3} more, last due {formatDate(addDays(deadline, 7 * interval * (count - 1)), { weekday: true, year: true })}</span>}
+                {count > 3 && countFrom && (
+                  <span className="muted">
+                    … {count - 3} more, last {hasDeadline ? 'due' : 'planned'} {formatDate(addDays(countFrom, 7 * interval * (count - 1)), { weekday: true, year: true })}
+                  </span>
+                )}
               </div>
             </>
           )}

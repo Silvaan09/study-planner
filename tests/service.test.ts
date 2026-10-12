@@ -393,11 +393,131 @@ describe('schema v4', () => {
       v4.db.close();
       fs.rmSync(dir3, { recursive: true, force: true });
     };
-    expect(v4.schemaVersion).toBe(4);
+    expect(v4.schemaVersion).toBe(migrations.length);
     expect(v4.backupsCreated).toHaveLength(1);
     const s4 = new StudyService(v4.db);
     expect(s4.getExercise(7)).toMatchObject({ title: 'Done', status: 'completed', handedIn: true, checklist: [{ text: 'Step', done: true }] });
     expect(s4.getExercise(8)).toMatchObject({ title: 'Open', status: 'in_progress', handedIn: false });
+  });
+});
+
+describe('schema v5', () => {
+  it('migrating a v4 database keeps every exercise with its plan dates, checklist, trash state and cascades', async () => {
+    close();
+    const { migrations } = await import('../src/main/db/migrations');
+    const dir4 = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-v4-'));
+    const v4 = openDatabase(dir4, { migrations: migrations.slice(0, 4) });
+    const t = '2026-01-01T00:00:00.000Z';
+    v4.db.exec(`INSERT INTO semesters (id, name, start_date, end_date, created_at, updated_at) VALUES (1, 'S', '2026-09-14', '2026-12-18', '${t}', '${t}');
+      INSERT INTO subjects (id, semester_id, name, color, created_at, updated_at) VALUES (1, 1, 'M', '#3366ff', '${t}', '${t}');
+      INSERT INTO exercise_series (id, subject_id, base_title, interval_weeks, next_number, created_at, updated_at) VALUES (3, 1, 'Set', 1, 2, '${t}', '${t}');
+      INSERT INTO exercises (id, subject_id, series_id, sequence_number, title, planned_date, deadline_date, status, handed_in, overrides, created_at, updated_at) VALUES
+        (7, 1, 3, 1, 'Set 01', '2026-09-16', '2026-09-18', 'completed', 1, '["title"]', '${t}', '${t}');
+      INSERT INTO trash_batches (id, kind, label, detail, deleted_at) VALUES (5, 'exercise', 'Gone', '', '${t}');
+      INSERT INTO exercises (id, subject_id, title, planned_date, deadline_date, status, created_at, updated_at, deleted_at, trash_batch_id) VALUES
+        (8, 1, 'Gone', '2026-09-16', '2026-09-20', 'not_started', '${t}', '${t}', '${t}', 5);
+      INSERT INTO exercise_plan_dates (exercise_id, date) VALUES (7, '2026-09-16'), (7, '2026-09-17'), (8, '2026-09-16');
+      INSERT INTO exercise_checklist_items (exercise_id, position, text, done) VALUES (7, 0, 'Step', 1);`);
+    v4.db.close();
+    const v5 = openDatabase(dir4);
+    close = () => {
+      v5.db.close();
+      fs.rmSync(dir4, { recursive: true, force: true });
+    };
+    expect(v5.schemaVersion).toBe(migrations.length);
+    expect(v5.backupsCreated).toHaveLength(1);
+    const s5 = new StudyService(v5.db);
+    expect(s5.getExercise(7)).toMatchObject({
+      title: 'Set 01',
+      seriesId: 3,
+      sequenceNumber: 1,
+      plannedDates: ['2026-09-16', '2026-09-17'],
+      deadlineDate: '2026-09-18',
+      status: 'completed',
+      handedIn: true,
+      overrides: ['title'],
+      checklist: [{ text: 'Step', done: true }],
+    });
+    expect(() => s5.getExercise(8)).toThrow(UserError);
+    s5.restoreTrash(5);
+    expect(s5.getExercise(8).deadlineDate).toBe('2026-09-20');
+    // The deadline can now be removed, and the foreign keys to the rebuilt table still cascade.
+    s5.updateExercise({ id: 8, scope: 'this', changes: { deadlineDate: null } });
+    expect(s5.getExercise(8).deadlineDate).toBeNull();
+    v5.db.exec('DELETE FROM exercises WHERE id = 7');
+    expect(v5.db.prepare('SELECT count(*) AS n FROM exercise_plan_dates WHERE exercise_id = 7').get()).toEqual({ n: 0 });
+    expect(v5.db.prepare('SELECT count(*) AS n FROM exercise_checklist_items WHERE exercise_id = 7').get()).toEqual({ n: 0 });
+  });
+});
+
+describe('exercises without a deadline', () => {
+  const create = (extra: object = {}) =>
+    svc.createExercise({ subjectId: math.id, title: 'Reading', description: '', plannedDates: ['2026-09-22', '2026-09-24'], deadlineDate: null, ...extra });
+
+  it('are planned but not due, done once the work is done and overdue after the last planned day', () => {
+    const [e] = create();
+    expect(e).toMatchObject({ deadlineDate: null, handedIn: false });
+    // Shown on its planned days only.
+    expect(svc.getWeek(sem.id, '2026-09-21').exercises.map((x) => x.id)).toEqual([e.id]);
+    expect(svc.getToday(sem.id, '2026-09-21').dueSoon).toEqual([]);
+    // Not overdue on its last planned day, overdue the day after.
+    expect(svc.getToday(sem.id, '2026-09-24').overdue).toEqual([]);
+    expect(svc.getToday(sem.id, '2026-09-25').overdue.map((x) => x.id)).toEqual([e.id]);
+    const out = svc.getOutstanding(sem.id, '2026-09-25').items.find((i) => i.kind === 'exercise');
+    expect(out).toMatchObject({ date: '2026-09-22', overdue: true });
+
+    // Nothing to hand in: done is finished.
+    expect(() => svc.setExerciseHandedIn(e.id, true)).toThrow(UserError);
+    svc.setExerciseStatus(e.id, 'completed');
+    expect(svc.getToday(sem.id, '2026-09-25').overdue).toEqual([]);
+    expect(svc.getOutstanding(sem.id, '2026-09-25').items).toEqual([]);
+  });
+
+  it('adds, removes and moves deadlines; planned days only limit a deadline that exists', () => {
+    const [e] = create({ handedIn: true });
+    expect(e).toMatchObject({ status: 'not_started', handedIn: false });
+    // Planned days can move anywhere.
+    svc.moveExercise(e.id, '2026-09-24', '2026-10-30');
+    svc.updateExercise({ id: e.id, scope: 'this', changes: { deadlineDate: '2026-11-02' } });
+    expect(() => svc.updateExercise({ id: e.id, scope: 'this', changes: { deadlineDate: '2026-10-01' } })).toThrow(UserError);
+    svc.setExerciseHandedIn(e.id, true);
+    // Removing the deadline clears the hand-in but keeps the work done.
+    svc.updateExercise({ id: e.id, scope: 'this', changes: { deadlineDate: null } });
+    expect(svc.getExercise(e.id)).toMatchObject({ deadlineDate: null, status: 'completed', handedIn: false });
+  });
+
+  it('works through series: creation, extension and adding or removing the deadline for the whole series', () => {
+    const list = create({ plannedDates: ['2026-09-22'], recurrence: { intervalWeeks: 1, count: 3, firstNumber: 1 } });
+    expect(list.map((x) => x.deadlineDate)).toEqual([null, null, null]);
+    expect(svc.extendSeries(list[0].seriesId!, 1)[0]).toMatchObject({ plannedDates: ['2026-10-13'], deadlineDate: null });
+    // Adding a deadline in the series puts it at the same place in every occurrence's cycle.
+    svc.updateExercise({ id: list[1].id, scope: 'all', changes: { deadlineDate: '2026-10-02' } });
+    const occ = () => svc.subjectOverview(sem.id)[0].exercises;
+    expect(occ().map((x) => x.deadlineDate)).toEqual(['2026-09-25', '2026-10-02', '2026-10-09', '2026-10-16']);
+    // Moving it shifts each occurrence; removing it removes it everywhere.
+    svc.updateExercise({ id: list[0].id, scope: 'future', changes: { deadlineDate: '2026-09-26' } });
+    expect(occ().map((x) => x.deadlineDate)).toEqual(['2026-09-26', '2026-10-03', '2026-10-10', '2026-10-17']);
+    svc.updateExercise({ id: list[0].id, scope: 'all', changes: { deadlineDate: null } });
+    expect(occ().map((x) => x.deadlineDate)).toEqual([null, null, null, null]);
+  });
+});
+
+describe('moving deadlines (drag & drop in the "Due" row)', () => {
+  it('moves the deadline of one occurrence only and refuses to put it before a planned day', () => {
+    const list = svc.createExercise({
+      subjectId: math.id,
+      title: 'Sheet',
+      description: '',
+      plannedDates: ['2026-09-22'],
+      deadlineDate: '2026-09-25',
+      recurrence: { intervalWeeks: 1, count: 2, firstNumber: 1 },
+    });
+    svc.updateExercise({ id: list[0].id, scope: 'this', changes: { deadlineDate: '2026-10-01' } });
+    expect(svc.getExercise(list[0].id)).toMatchObject({ deadlineDate: '2026-10-01', overrides: ['deadlineDate'] });
+    expect(svc.getExercise(list[1].id).deadlineDate).toBe('2026-10-02');
+    // The deadline shows in the week it moved to.
+    expect(svc.getWeek(sem.id, '2026-09-28').exercises.map((x) => x.id)).toEqual([list[0].id, list[1].id]);
+    expect(() => svc.updateExercise({ id: list[0].id, scope: 'this', changes: { deadlineDate: '2026-09-21' } })).toThrow(UserError);
   });
 });
 

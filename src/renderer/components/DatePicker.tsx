@@ -15,7 +15,7 @@ import {
   weekday,
   type ISODate,
 } from '../../shared/dates';
-import { Calendar, ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from './Icons';
+import { Calendar, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, X } from './Icons';
 
 const WEEKDAY_MIN = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 const MARK_LABEL = { planned: 'Planned day', deadline: 'Deadline' } as const;
@@ -460,8 +460,16 @@ export function DateField({
   value,
   onChange,
   placeholder = 'Choose a date',
+  onClear,
+  clearLabel = 'Clear',
   ...options
-}: Omit<CalendarOptions, 'weeks'> & { onChange: (d: ISODate) => void; placeholder?: ReactNode }) {
+}: Omit<CalendarOptions, 'weeks'> & {
+  onChange: (d: ISODate) => void;
+  placeholder?: ReactNode;
+  /** Optional field: shows a × button while a date is set. */
+  onClear?: () => void;
+  clearLabel?: string;
+}) {
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
   const close = useCallback((refocus: boolean) => {
@@ -471,11 +479,11 @@ export function DateField({
   const valid = isValidISODate(value);
 
   return (
-    <>
+    <div className="date-field-wrap">
       <button
         ref={btn}
         type="button"
-        className={`input date-field ${open ? 'open' : ''}`}
+        className={`input date-field ${open ? 'open' : ''} ${onClear && valid ? 'clearable' : ''}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
@@ -489,7 +497,22 @@ export function DateField({
         <span className={valid ? '' : 'placeholder'}>{valid ? formatDate(value, { weekday: true, year: true }) : placeholder}</span>
         <Calendar size={15} />
       </button>
+      {onClear && valid && (
+        <button
+          type="button"
+          className="date-field-clear"
+          title={clearLabel}
+          aria-label={clearLabel}
+          onClick={() => {
+            setOpen(false);
+            onClear();
+            btn.current?.focus();
+          }}
+        >
+          <X size={14} />
+        </button>
+      )}
       {open && btn.current && <DatePopover anchor={btn.current} value={value} onSelect={onChange} onClose={close} {...options} />}
-    </>
+    </div>
   );
 }

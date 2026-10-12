@@ -39,7 +39,7 @@ describe('demo data (npm run seed-demo)', () => {
 
     const out = svc.getOutstanding(semesterId, today);
     const overdue = out.items.filter((i) => i.kind === 'exercise' && i.overdue).map((i) => (i.kind === 'exercise' ? i.exercise.title : ''));
-    expect(overdue.sort()).toEqual(['Git Basics Quiz', 'Mechanics Problems 01']);
+    expect(overdue.sort()).toEqual(['Git Basics Quiz', 'Mechanics Problems 01', 'Reading: Periodic Table']);
     // The two missed lectures, plus today's (Monday's) two, which are still open.
     expect(out.items.filter((i) => i.kind === 'lecture').map((i) => i.date)).toEqual(['2026-09-16', '2026-09-24', '2026-09-28', '2026-09-28']);
 
@@ -61,5 +61,10 @@ describe('demo data (npm run seed-demo)', () => {
     expect([set1.status, set1.handedIn]).toEqual(['completed', true]);
     const lab2 = overview[3].exercises.find((e) => e.title === 'Lab Report 02')!;
     expect(lab2.checklist.every((c) => !c.done)).toBe(true);
+    // Without a deadline: done once the planned day is past, so it isn't outstanding; the future one is.
+    const reading = overview[0].exercises.find((e) => e.title === 'Reading: Atomic Structure')!;
+    expect([reading.deadlineDate, reading.status, reading.handedIn]).toEqual([null, 'completed', false]);
+    expect(out.items.some((i) => i.kind === 'exercise' && i.exercise.id === reading.id)).toBe(false);
+    expect(out.items.some((i) => i.kind === 'exercise' && i.exercise.title === 'Reading: Reaction Kinetics' && !i.overdue)).toBe(true);
   });
 });

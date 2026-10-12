@@ -199,6 +199,48 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 5,
+    name: 'optional exercise deadline',
+    rebuildsTables: true,
+    up(db) {
+      // deadline_date becomes nullable (NULL = no deadline, nothing to hand in). SQLite can't drop NOT NULL,
+      // so the table is rebuilt with every row copied; ids stay the same, so plan dates and checklists still match.
+      db.exec(`
+        CREATE TABLE exercises_new (
+          id               INTEGER PRIMARY KEY,
+          subject_id       INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+          series_id        INTEGER REFERENCES exercise_series(id) ON DELETE CASCADE,
+          sequence_number  INTEGER,
+          title            TEXT NOT NULL,
+          description      TEXT NOT NULL DEFAULT '',
+          planned_date     TEXT NOT NULL,
+          deadline_date    TEXT,
+          status           TEXT NOT NULL DEFAULT 'not_started'
+                           CHECK (status IN ('not_started', 'in_progress', 'completed')),
+          overrides        TEXT NOT NULL DEFAULT '[]',
+          created_at       TEXT NOT NULL,
+          updated_at       TEXT NOT NULL,
+          deleted_at       TEXT,
+          trash_batch_id   INTEGER,
+          handed_in        INTEGER NOT NULL DEFAULT 0 CHECK (handed_in IN (0, 1)),
+          CHECK (deadline_date IS NULL OR planned_date <= deadline_date),
+          CHECK (deadline_date IS NOT NULL OR handed_in = 0)
+        );
+        INSERT INTO exercises_new (id, subject_id, series_id, sequence_number, title, description, planned_date, deadline_date,
+                                   status, overrides, created_at, updated_at, deleted_at, trash_batch_id, handed_in)
+          SELECT id, subject_id, series_id, sequence_number, title, description, planned_date, deadline_date,
+                 status, overrides, created_at, updated_at, deleted_at, trash_batch_id, handed_in
+          FROM exercises;
+        DROP TABLE exercises;
+        ALTER TABLE exercises_new RENAME TO exercises;
+        CREATE INDEX idx_exercises_subject ON exercises(subject_id);
+        CREATE INDEX idx_exercises_series ON exercises(series_id);
+        CREATE INDEX idx_exercises_planned ON exercises(planned_date);
+        CREATE INDEX idx_exercises_deadline ON exercises(deadline_date);
+      `);
+    },
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = migrations[migrations.length - 1].version;

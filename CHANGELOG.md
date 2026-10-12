@@ -2,6 +2,13 @@
 
 Versions follow [semantic versioning](https://semver.org): **major** for changes you have to act on yourself or that remove features, **minor** for new features and visible UI changes (including automatic database migrations), **patch** for bug fixes and small tweaks.
 
+## 1.8.0 — 2026-10-12
+- **Exercises without a deadline.** Leave the deadline empty (or clear it with the × in the deadline field) and the exercise only appears on its planned days in the "To do" row, with nothing in the "Due" row. There is nothing to hand in, so it is finished once it's Done; if it isn't done by the end of its last planned day it shows up as overdue (Today page, Outstanding, timetable). A recurring series can go without a deadline too, and adding one later for the whole series places it at the same point in every occurrence.
+- **Drag deadlines.** Deadline cards in the timetable's "Due" row can now be dragged to another day, just like the cards in the "To do" row, including holding them at the left or right edge to move into another week. A deadline can't be put before a day the exercise is planned for. It moves that one exercise only (in a series, the others keep theirs), with Undo.
+- Today page: when the next exam is today, the countdown says "Today" followed by the exam's name, without "until".
+- Database schema v5 (`exercises.deadline_date` may now be empty). Existing data is kept; a backup is made automatically before the upgrade. After updating, older app versions can no longer open the database.
+- Development: the demo data has three reading assignments without a deadline (one done, one overdue, one upcoming).
+
 ## 1.7.0 — 2026-09-30
 - Timetable: drag an exercise from the "To do" row and hold it at the left or right edge of the timetable to switch to the previous or next week, then drop it on a day there. Keep holding to go further, one week every 0.7 s. While you drag, the edges show an arrow that fills up until the week switches.
 - Timetable: with nothing planned or due, the "To do" and "Due" rows are now the same height.

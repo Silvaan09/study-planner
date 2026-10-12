@@ -260,6 +260,36 @@ textarea.input {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+.date-field-wrap {
+  position: relative;
+}
+.date-field-wrap .date-field {
+  width: 100%;
+}
+.date-field.clearable span {
+  margin-right: 24px; /* room for the clear button left of the calendar icon */
+}
+.date-field-clear {
+  position: absolute;
+  top: 50%;
+  right: 31px;
+  transform: translateY(-50%);
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.date-field-clear:hover,
+.date-field-clear:focus-visible {
+  background: var(--surface-3);
+  color: var(--text);
+}
 .date-popover {
   position: fixed;
   z-index: 300;

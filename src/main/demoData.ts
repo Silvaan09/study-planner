@@ -35,7 +35,8 @@ interface DemoExercise {
   subject: SubjectKey;
   title: string;
   plannedDates: ISODate[];
-  deadlineDate: ISODate;
+  /** null = no deadline (done once the work is done, overdue after the last planned day). */
+  deadlineDate: ISODate | null;
   /** Recurring: repeats every `interval` weeks, `count` times. */
   every?: { interval: number; count: number };
   /** Checklist steps (copied to every occurrence of a series). */
@@ -73,6 +74,10 @@ const EXERCISES: DemoExercise[] = [
   },
   { subject: 'math', title: 'Midterm Preparation', plannedDates: ['2026-10-26', '2026-10-28', '2026-10-31', '2026-11-01'], deadlineDate: '2026-11-02' },
   { subject: 'physics', title: 'Presentation: Pendulum Experiment', plannedDates: ['2026-11-12', '2026-11-15'], deadlineDate: '2026-11-17' },
+  // Without a deadline: only on the "To do" row.
+  { subject: 'chemistry', title: 'Reading: Atomic Structure', plannedDates: ['2026-09-18'], deadlineDate: null },
+  { subject: 'chemistry', title: 'Reading: Periodic Table', plannedDates: ['2026-09-25'], deadlineDate: null },
+  { subject: 'chemistry', title: 'Reading: Reaction Kinetics', plannedDates: ['2026-10-08', '2026-10-09'], deadlineDate: null },
 ];
 
 // [subject, kind, title, date, start, end, room]
@@ -88,7 +93,7 @@ const EXAMS: [SubjectKey, ExamKind, string, ISODate, string | null, string | nul
 /** Past lecture occurrences left uncompleted ("title|date"), so the Outstanding view has something to show. */
 const MISSED_LECTURES = new Set(['Analysis I|2026-09-16', 'Programming Tutorial|2026-09-24', 'Electromagnetism|2026-10-01']);
 /** Exercises left "not started" although their deadline passed (overdue). */
-const OVERDUE_EXERCISES = new Set(['Git Basics Quiz', 'Mechanics Problems 01']);
+const OVERDUE_EXERCISES = new Set(['Git Basics Quiz', 'Mechanics Problems 01', 'Reading: Periodic Table']);
 /** Exercises worked through (all planned days past) but not handed in yet, while their deadline is still ahead. */
 const DONE_NOT_HANDED_IN = new Set(['Essay: Chemical Bonding']);
 
@@ -136,8 +141,10 @@ export function seedDemo(svc: StudyService, today: ISODate): DemoSummary {
     for (const e of exercises) {
       if (OVERDUE_EXERCISES.has(e.title)) continue;
       // Handed in (due before today) or done: every step ticked; in progress: the first half.
-      const handedIn = e.deadlineDate < today;
-      const worked = !handedIn && DONE_NOT_HANDED_IN.has(e.title) && e.plannedDates[e.plannedDates.length - 1] < today;
+      // Without a deadline: done once its planned days are past.
+      const handedIn = e.deadlineDate !== null && e.deadlineDate < today;
+      const plannedPast = e.plannedDates[e.plannedDates.length - 1] < today;
+      const worked = !handedIn && plannedPast && (e.deadlineDate === null || DONE_NOT_HANDED_IN.has(e.title));
       const done = handedIn || worked ? e.checklist : e.plannedDate < today ? e.checklist.slice(0, Math.ceil(e.checklist.length / 2)) : [];
       for (const step of done) svc.setChecklistItemDone(step.id, true);
       if (handedIn) svc.setExerciseHandedIn(e.id, true);

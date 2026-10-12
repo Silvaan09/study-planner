@@ -3,12 +3,12 @@ import { api } from '../api';
 import { useLoad, useUi } from '../ui';
 import { useActions } from '../actions';
 import { WEEKDAY_SHORT, formatDate, todayISO } from '../../shared/dates';
-import { EXERCISE_STAGE_LABEL, exerciseStage, type Exercise, type Id, type Semester, type Subject } from '../../shared/types';
+import { EXERCISE_STAGE_LABEL, exerciseDueBy, exerciseStage, type Exercise, type Id, type Semester, type Subject } from '../../shared/types';
 import { ExamDialog, ExerciseDialog, LectureDialog, SubjectDialog } from '../dialogs';
 import { FocusPill } from '../components/FocusPill';
 import { ExamRow } from '../components/ExamRow';
 import { ChecklistProgress } from '../components/Checklist';
-import { Book, ChevronDown, ChevronRight, Flag, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
+import { Book, ChevronDown, ChevronRight, Flag, ListTodo, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
 
 export function SubjectsView({ semester, focus, clearFocus }: { semester: Semester; focus: Subject | null; clearFocus: () => void }) {
   const ui = useUi();
@@ -38,9 +38,15 @@ export function SubjectsView({ semester, focus, clearFocus }: { semester: Semest
       <StatusIcon status={exerciseStage(e)} size={13} />
       <span className="row-title">{e.title}</span>
       <ChecklistProgress exercise={e} compact />
-      <span className="row-due">
-        <Flag size={11} /> {formatDate(e.deadlineDate, { weekday: true })}
-      </span>
+      {e.deadlineDate ? (
+        <span className="row-due">
+          <Flag size={11} /> {formatDate(e.deadlineDate, { weekday: true })}
+        </span>
+      ) : (
+        <span className="row-due" title="No deadline — last planned day">
+          <ListTodo size={11} /> {formatDate(exerciseDueBy(e), { weekday: true })}
+        </span>
+      )}
     </button>
   );
 

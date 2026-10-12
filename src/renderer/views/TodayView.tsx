@@ -3,7 +3,7 @@ import { api } from '../api';
 import { useLoad, useNow, useUi } from '../ui';
 import { useChecklistToggle, useExerciseProgress, useWeekCompletion } from '../actions';
 import { diffDays, formatDate, startOfWeek, timeToMinutes, todayISO, weeksBetween, WEEKDAY_NAMES, weekday, MONTH_NAMES, type ISODate } from '../../shared/dates';
-import { EXAM_KIND_LABEL, EXERCISE_STAGE_LABEL, EXERCISE_STATUS_LABEL, examTitle, exerciseStage, type Exam, type Exercise, type ExerciseStage, type ExerciseStatus, type Id, type LectureOccurrence, type Semester, type Subject } from '../../shared/types';
+import { EXAM_KIND_LABEL, EXERCISE_STAGE_LABEL, EXERCISE_STATUS_LABEL, examTitle, exerciseDueBy, exerciseStage, type Exam, type Exercise, type ExerciseStage, type ExerciseStatus, type Id, type LectureOccurrence, type Semester, type Subject } from '../../shared/types';
 import { ExamDialog, ExerciseDialog } from '../dialogs';
 import { FocusPill } from '../components/FocusPill';
 import { ChecklistList, ChecklistProgress } from '../components/Checklist';
@@ -159,8 +159,9 @@ export function TodayView({
   );
 
   const dueLabel = (e: Exercise) => {
-    const n = diffDays(today, e.deadlineDate);
+    const n = diffDays(today, exerciseDueBy(e));
     if (n < 0) return <span className="badge badge-danger"><Alert size={12} /> Overdue · {plural(-n, 'day')}</span>;
+    if (!e.deadlineDate) return null;
     if (n === 0) return <span className="badge badge-warn">Due today</span>;
     if (n === 1) return <span className="badge badge-warn">Due tomorrow</span>;
     return <span className="badge">Due {n < 7 ? formatDate(e.deadlineDate, { weekday: true }) : `in ${plural(n, 'day')}`}</span>;
@@ -257,7 +258,7 @@ export function TodayView({
               <GraduationCap size={18} />
               <div>
                 <strong>{nextExam ? (nextExam.date === today ? 'Today' : plural(diffDays(today, nextExam.date), 'day')) : '—'}</strong>
-                <span>{nextExam ? `until ${examTitle(nextExam)} · ${nameOf(nextExam.subjectId)}` : 'no exams yet'}</span>
+                <span>{nextExam ? `${nextExam.date === today ? '' : 'until '}${examTitle(nextExam)} · ${nameOf(nextExam.subjectId)}` : 'no exams yet'}</span>
               </div>
             </div>
           </div>
@@ -312,13 +313,22 @@ export function TodayView({
                 >
                   {v.overdue.map((e) => (
                     <div key={e.id} className="today-row compact-row" style={{ '--c': colorOf(e.subjectId) } as CSSProperties}>
-                      <button className="check-btn" onClick={() => void progress.setHandedIn(e, true)} title="Mark as handed in">
+                      <button className="check-btn" onClick={() => void progress.settle(e)} title={e.deadlineDate ? 'Mark as handed in' : 'Mark as done'}>
                         <Check size={14} />
                       </button>
                       <span className="today-main clickable" onClick={() => openExercise(e.id)}>
                         <span className="today-title">{e.title}</span>
                         <span className="today-meta">
-                          <span className="subject-dot" /> {nameOf(e.subjectId)} · <Flag size={11} /> was due {formatDate(e.deadlineDate, { weekday: true })}
+                          <span className="subject-dot" /> {nameOf(e.subjectId)} ·{' '}
+                          {e.deadlineDate ? (
+                            <>
+                              <Flag size={11} /> was due {formatDate(e.deadlineDate, { weekday: true })}
+                            </>
+                          ) : (
+                            <>
+                              <ListTodo size={11} /> was planned for {formatDate(exerciseDueBy(e), { weekday: true })}
+                            </>
+                          )}
                         </span>
                       </span>
                       {dueLabel(e)}
