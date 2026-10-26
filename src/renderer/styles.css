@@ -686,6 +686,10 @@ textarea.input {
 .subject-item.faded {
   opacity: 0.45;
 }
+/* The built-in "Personal" subject (tasks), after the real subjects. */
+.subject-item.personal {
+  margin-top: 4px;
+}
 .subject-item.faded:hover {
   opacity: 1;
 }
@@ -1362,6 +1366,51 @@ textarea.input {
   border-style: solid;
   border-color: var(--danger);
   box-shadow: 0 0 0 1px var(--danger);
+}
+
+/* Previous, current and next week side by side on a track moved with a transform (see TimetableView). The carousel
+   scrolls natively over invisible room (`.tt-swipe-room`) only to read swipes from; the sticky viewport stays put. */
+.tt-carousel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  will-change: scroll-position;
+}
+.tt-carousel::-webkit-scrollbar {
+  display: none;
+}
+/* While a card is dragged, the edges switch weeks instead (no drag auto-scrolling). */
+.timetable.is-dragging .tt-carousel {
+  overflow-x: hidden;
+}
+.tt-viewport {
+  position: sticky;
+  left: 0;
+  flex: 0 0 100%;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
+}
+.tt-swipe-room {
+  flex: 0 0 20000px;
+}
+.tt-track {
+  flex: 1 0 100%;
+  min-width: 0;
+  display: flex;
+  will-change: transform;
+}
+.tt-pane {
+  flex: 0 0 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  /* Each week is laid out on its own: a swipe landing adds one week and must not re-lay out the other two. */
+  contain: strict;
 }
 
 /* time grid */
@@ -2247,6 +2296,15 @@ button.row-item:hover {
   height: 1px;
   margin: 4px 6px;
   background: var(--border);
+}
+.menu-heading {
+  padding: 6px 10px 2px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+  white-space: nowrap;
 }
 .toasts {
   position: fixed;

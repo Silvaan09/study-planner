@@ -241,6 +241,40 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 6,
+    name: 'progress per planned day, personal tasks',
+    up(db) {
+      // Every planned day (session) gets its own progress; exercises.status is kept as the summary of its sessions.
+      // Existing sessions take their exercise's status, so nothing changes on screen.
+      // Each semester gets one built-in "Personal" subject: its exercises are tasks that belong to no real subject.
+      db.exec(`
+        ALTER TABLE exercise_plan_dates ADD COLUMN status TEXT NOT NULL DEFAULT 'not_started'
+          CHECK (status IN ('not_started', 'in_progress', 'completed'));
+        UPDATE exercise_plan_dates SET status = (SELECT x.status FROM exercises x WHERE x.id = exercise_plan_dates.exercise_id);
+
+        ALTER TABLE subjects ADD COLUMN personal INTEGER NOT NULL DEFAULT 0 CHECK (personal IN (0, 1));
+        CREATE UNIQUE INDEX idx_subjects_personal ON subjects(semester_id) WHERE personal = 1;
+        INSERT INTO subjects (semester_id, name, color, created_at, updated_at, personal)
+          SELECT id, 'Personal', '#64748b', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 1 FROM semesters;
+      `);
+    },
+  },
+  {
+    version: 7,
+    name: 'sessions of a started exercise start not started',
+    up(db) {
+      // From now on exercises.status is the exercise's own status again (done when every session or every checklist
+      // step is), not derived from its sessions, and a session is only in progress when that day's work is.
+      // v6 copied "in progress" into every session of a started exercise; with several sessions that marked days
+      // nobody had worked on yet, so those start over as not started. The exercise itself stays in progress.
+      db.exec(`
+        UPDATE exercise_plan_dates SET status = 'not_started'
+        WHERE status = 'in_progress'
+          AND (SELECT count(*) FROM exercise_plan_dates p WHERE p.exercise_id = exercise_plan_dates.exercise_id) > 1;
+      `);
+    },
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = migrations[migrations.length - 1].version;

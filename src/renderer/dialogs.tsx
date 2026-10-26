@@ -178,7 +178,7 @@ export function SubjectDialog({ semesterId, subject, close }: { semesterId: Id; 
   };
   return (
     <Modal
-      title={subject ? 'Edit subject' : 'New subject'}
+      title={subject?.personal ? 'Personal tasks' : subject ? 'Edit subject' : 'New subject'}
       onClose={() => close()}
       footer={
         <Footer
@@ -186,10 +186,13 @@ export function SubjectDialog({ semesterId, subject, close }: { semesterId: Id; 
           onSave={save}
           disabled={!name.trim()}
           saveLabel={subject ? 'Save' : 'Create subject'}
-          onDelete={subject ? async () => (await actions.deleteSubject(subject)) && close() : undefined}
+          onDelete={subject && !subject.personal ? async () => (await actions.deleteSubject(subject)) && close() : undefined}
         />
       }
     >
+      {subject?.personal && (
+        <p className="muted small">Tasks that don't belong to a subject. Their name and color show on the timetable like a subject's.</p>
+      )}
       <Field label="Name">
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Mathematics" autoFocus />
       </Field>
@@ -233,8 +236,9 @@ export function LectureDialog({
 }) {
   const ui = useUi();
   const actions = useActions();
+  const courses = subjects.filter((s) => !s.personal);
   const [loaded, setLoaded] = useState<Lecture | null>(null);
-  const [subjectId, setSubjectId] = useState<Id | ''>(defaults?.subjectId ?? subjects[0]?.id ?? '');
+  const [subjectId, setSubjectId] = useState<Id | ''>(defaults?.subjectId ?? courses[0]?.id ?? '');
   const [title, setTitle] = useState(defaults?.title ?? '');
   const [day, setDay] = useState(defaults?.weekday ?? 1);
   const [start, setStart] = useState(defaults?.startTime ?? '10:00');
@@ -264,7 +268,7 @@ export function LectureDialog({
     }
   };
 
-  if (subjects.length === 0) {
+  if (courses.length === 0) {
     return (
       <Modal title="New lecture" onClose={() => close()}>
         <p>Create a subject first — every lecture belongs to a subject.</p>
@@ -294,7 +298,7 @@ export function LectureDialog({
     >
       <Field label="Subject">
         <select className="input" value={subjectId} onChange={(e) => setSubjectId(+e.target.value)}>
-          {subjects.map((s) => (
+          {courses.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name}
             </option>
@@ -610,6 +614,9 @@ export function ExerciseDialog({
   const hasDeadline = isValidISODate(deadline);
   const dateError = latestPlanned && hasDeadline && latestPlanned > deadline ? "Planned days can't be after the deadline." : null;
   const activeTitle = seriesScope ? seriesTitleText : title;
+  // A task: an exercise of the personal subject, i.e. one that belongs to no subject.
+  const isTask = subjects.some((s) => s.personal && s.id === subjectId);
+  const noun = isTask ? 'task' : 'exercise';
   const valid = subjectId !== '' && activeTitle.trim() && plannedValid && !dateError && (!isEdit || exercise);
   // Without a deadline there is nothing to hand in.
   const stages = hasDeadline ? EXERCISE_STAGES : EXERCISE_STATUSES;
@@ -647,7 +654,7 @@ export function ExerciseDialog({
         }),
       );
       if (created) {
-        if (created.length > 1) ui.toast(`Created ${created.length} exercises`, { kind: 'success' });
+        if (created.length > 1) ui.toast(`Created ${created.length} ${noun}s`, { kind: 'success' });
         close(true);
       }
       return;
@@ -673,7 +680,7 @@ export function ExerciseDialog({
       res = await ui.run(() => api.updateExercise({ id: e.id, scope, changes, overridePolicy: policy }));
     }
     if (res?.status === 'updated') {
-      if (res.count > 1) ui.toast(`Updated ${res.count} exercises`, { kind: 'success' });
+      if (res.count > 1) ui.toast(`Updated ${res.count} ${noun}s`, { kind: 'success' });
       close(true);
     }
   };
@@ -688,7 +695,7 @@ export function ExerciseDialog({
 
   return (
     <Modal
-      title={isEdit ? 'Edit exercise' : 'New exercise'}
+      title={`${isEdit ? 'Edit' : 'New'} ${noun}`}
       onClose={() => close()}
       width={560}
       footer={
@@ -696,7 +703,7 @@ export function ExerciseDialog({
           onCancel={() => close()}
           onSave={save}
           disabled={!valid}
-          saveLabel={isEdit ? 'Save' : repeat ? `Create ${count} exercises` : 'Create exercise'}
+          saveLabel={isEdit ? 'Save' : repeat ? `Create ${count} ${noun}s` : `Create ${noun}`}
           onDelete={exercise ? async () => (await actions.deleteExercise(exercise)) && close(true) : undefined}
           extra={
             series ? (
@@ -750,7 +757,7 @@ export function ExerciseDialog({
           <select className="input" value={subjectId} onChange={(e) => setSubjectId(+e.target.value)}>
             {subjects.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name}
+                {s.personal ? `No subject · ${s.name}` : s.name}
               </option>
             ))}
           </select>
@@ -761,7 +768,7 @@ export function ExerciseDialog({
           </Field>
         ) : (
           <Field label="Title" hint={repeat ? 'A number is appended: "Problem Set 01", "Problem Set 02", …' : undefined}>
-            <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Problem Set" autoFocus={!isEdit} />
+            <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={isTask ? 'e.g. Renew passport' : 'e.g. Problem Set'} autoFocus={!isEdit} />
           </Field>
         )}
       </div>
@@ -775,7 +782,6 @@ export function ExerciseDialog({
         <Field
           label="Deadline (hand-in)"
           error={dateError}
-          hint={hasDeadline ? undefined : "Optional. Without one it's only on the To do row, and overdue once its planned days have passed."}
         >
           <DateField
             value={deadline}
@@ -789,7 +795,16 @@ export function ExerciseDialog({
         </Field>
       </div>
 
-      <Field label="Status">
+      <Field
+        label="Status"
+        hint={
+          plannedDates.length > 1
+            ? `Of the whole ${noun}: done once every planned day${steps.length ? ' or every checklist step' : ''} is. Each day is checked off on its own in the timetable and on the Today page.`
+            : steps.length
+              ? `Done once every checklist step is ticked off.`
+              : undefined
+        }
+      >
         <StatusPicker value={stage} onChange={setStage} stages={stages} />
       </Field>
 
@@ -807,7 +822,7 @@ export function ExerciseDialog({
         <div className={`repeat-box ${repeat ? 'on' : ''}`}>
           <label className="checkbox">
             <input type="checkbox" checked={repeat} onChange={(e) => setRepeat(e.target.checked)} />
-            <Repeat size={14} /> Recurring exercise
+            <Repeat size={14} /> Recurring {noun}
           </label>
           {repeat && (
             <>
@@ -883,8 +898,9 @@ export function ExamDialog({
   const ui = useUi();
   const actions = useActions();
   const isEdit = examId !== undefined;
+  const courses = subjects.filter((s) => !s.personal);
   const [loaded, setLoaded] = useState<Exam | null>(null);
-  const [subjectId, setSubjectId] = useState<Id | ''>(defaults?.subjectId ?? subjects[0]?.id ?? '');
+  const [subjectId, setSubjectId] = useState<Id | ''>(defaults?.subjectId ?? courses[0]?.id ?? '');
   const [kind, setKind] = useState<ExamKind>(defaults?.kind ?? 'midterm');
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(() => defaultExamDate(semester, defaults?.kind ?? 'midterm'));
@@ -931,7 +947,7 @@ export function ExamDialog({
     if (ok) close(true);
   };
 
-  if (subjects.length === 0) {
+  if (courses.length === 0) {
     return (
       <Modal title="New exam" onClose={() => close()}>
         <p>Create a subject first — every exam belongs to a subject.</p>
@@ -966,7 +982,7 @@ export function ExamDialog({
       <div className="field-row">
         <Field label="Subject">
           <select className="input" value={subjectId} onChange={(e) => setSubjectId(+e.target.value)}>
-            {subjects.map((s) => (
+            {courses.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>

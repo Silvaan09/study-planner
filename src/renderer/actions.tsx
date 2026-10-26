@@ -1,7 +1,7 @@
 import { api } from './api';
 import { Confirm, ScopeChooser, useUi } from './ui';
-import { dateInWeek, formatDate, type ISODate } from '../shared/dates';
-import type { DeleteResult, Exam, Exercise, ExerciseStage, ExerciseStatus, Id, Lecture, Semester, Subject } from '../shared/types';
+import { dateInWeek, formatDate, startOfWeek, type ISODate } from '../shared/dates';
+import { sessionStatus, type DeleteResult, type Exam, type Exercise, type ExerciseStage, type ExerciseStatus, type Id, type Lecture, type Semester, type Subject } from '../shared/types';
 import { biggerCelebration, celebrationFor, exerciseWeeks, weekProgress, type CelebrationKind } from '../shared/progress';
 import { playDing } from './sound';
 
@@ -29,7 +29,7 @@ export function useWeekCompletion(semesterId: Id) {
 }
 
 /**
- * Exercise progress, shared by all views. The work status belongs to the planned ("To do") days;
+ * Exercise progress, shared by all views. The work belongs to the planned ("To do") days, each session on its own;
  * handing in belongs to the deadline, so finishing the work doesn't tick off the deadline.
  * Both run through useWeekCompletion when something gets checked off.
  */
@@ -54,6 +54,25 @@ export function useExerciseProgress(semesterId: Id) {
       if (handedIn) ui.toast(`"${e.title}" handed in`, { kind: 'success', action: undo(e) });
     });
 
+  /** One session (planned day) only: the planned cards and "To do today". The exercise is done once every session is. */
+  const setSession = (e: Exercise, date: ISODate, status: ExerciseStatus, opts: { toast?: boolean } = {}) =>
+    ui.run(async () => {
+      const before = sessionStatus(e, date);
+      const done = status === 'completed' && before !== 'completed';
+      let after: Exercise | undefined;
+      await completing(done ? [startOfWeek(date)] : [], async () => {
+        after = await api.setSessionStatus(e.id, date, status);
+      });
+      if (done && opts.toast) {
+        const n = e.plannedDates.length;
+        const what = n > 1 && after?.status !== 'completed' ? `Session ${e.plannedDates.indexOf(date) + 1} of ${n} of "${e.title}"` : `"${e.title}"`;
+        ui.toast(`${what} done`, {
+          kind: 'success',
+          action: { label: 'Undo', run: () => void ui.run(() => api.setSessionStatus(e.id, date, before)) },
+        });
+      }
+    });
+
   /** For pickers that offer all four stages. */
   const setStage = (e: Exercise, stage: ExerciseStage, opts: { toast?: boolean } = {}) =>
     stage === 'handed_in'
@@ -65,23 +84,21 @@ export function useExerciseProgress(semesterId: Id) {
   /** Finishes it off for good: hands it in, or (without a deadline, nothing to hand in) marks it done. */
   const settle = (e: Exercise) => (e.deadlineDate ? setHandedIn(e, true) : setStatus(e, 'completed', { toast: true }));
 
-  return { setStatus, setHandedIn, setStage, settle };
+  return { setStatus, setSession, setHandedIn, setStage, settle };
 }
 
-/** Ticks a checklist step; once every step is done, offers to mark the exercise done (with celebration). */
-export function useChecklistToggle(semesterId: Id) {
+/** Ticks a checklist step. Ticking the last one finishes the exercise (the service does that): ding and toast with Undo. */
+export function useChecklistToggle() {
   const ui = useUi();
-  const completing = useWeekCompletion(semesterId);
   return (itemId: Id, done: boolean) =>
     ui.run(async () => {
       const e = await api.setChecklistItemDone(itemId, done);
-      if (done && e.status !== 'completed' && e.checklist.every((c) => c.done)) {
-        ui.toast(`All steps of "${e.title}" are done`, {
+      if (done && e.status === 'completed' && e.checklist.every((c) => c.done)) {
+        playDing();
+        const ready = e.deadlineDate && !e.handedIn ? ' · ready to hand in' : '';
+        ui.toast(`"${e.title}" done: every step is ticked off${ready}`, {
           kind: 'success',
-          action: {
-            label: 'Mark done',
-            run: () => void ui.run(() => completing(exerciseWeeks(e.plannedDates), () => api.setExerciseStatus(e.id, 'completed'))),
-          },
+          action: { label: 'Undo', run: () => void ui.run(() => api.setChecklistItemDone(itemId, false)) },
         });
       }
       return e;

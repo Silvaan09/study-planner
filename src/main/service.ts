@@ -18,6 +18,7 @@ import {
   examTitle,
   exerciseDueBy,
   exerciseSettled,
+  sessionStatus,
   type ChecklistItem,
   type ChecklistItemInput,
   type DeleteResult,
@@ -27,6 +28,7 @@ import {
   type ExerciseChanges,
   type ExerciseCreateInput,
   type ExerciseSeries,
+  type ExerciseSession,
   type ExerciseStatus,
   type ExerciseUpdateInput,
   type ExerciseUpdateResult,
@@ -69,14 +71,90 @@ const CHANGE_FIELDS: [OverridableField, keyof ExerciseChanges][] = [
   ['subjectId', 'subjectId'],
 ];
 
-/** Override fields for the changed keys ('checklist' is handled separately: only a changed structure counts). */
-/** Keeps "handed in implies completed" after a change: a newly set handedIn wins, otherwise the status does. */
-function settleProgress(u: Exercise, c: ExerciseChanges): void {
-  if (!u.handedIn || u.status === 'completed') return;
-  if (c.handedIn) u.status = 'completed';
-  else u.handedIn = false;
+/** The built-in subject every semester has for personal tasks (see Subject.personal). */
+const PERSONAL_SUBJECT = { name: 'Personal', color: '#64748b' };
+
+const STATUS_RANK: Record<ExerciseStatus, number> = { not_started: 0, in_progress: 1, completed: 2 };
+
+/** The work is done: every session is, or every step of a non-empty checklist is ticked. */
+function workDone(sessions: ExerciseSession[], checklist: { done: boolean }[]): boolean {
+  return sessions.every((s) => s.status === 'completed') || (checklist.length > 0 && checklist.every((c) => c.done));
 }
 
+/** Any session or step started or done. */
+function anyProgress(sessions: ExerciseSession[], checklist: { done: boolean }[]): boolean {
+  return sessions.some((s) => s.status !== 'not_started') || checklist.some((c) => c.done);
+}
+
+/** The exercise's status as its sessions and steps show it: done (see workDone), in progress, or not started. */
+function shownStatus(sessions: ExerciseSession[], checklist: { done: boolean }[]): ExerciseStatus {
+  if (workDone(sessions, checklist)) return 'completed';
+  return anyProgress(sessions, checklist) ? 'in_progress' : 'not_started';
+}
+
+/**
+ * The status after one session was set to `status`: done once the last session is; a done exercise stays done while
+ * sessions are checked off (e.g. one finished through its checklist); otherwise in progress or not started.
+ */
+export function statusAfterSession(e: Exercise, sessions: ExerciseSession[], status: ExerciseStatus): ExerciseStatus {
+  if (sessions.every((s) => s.status === 'completed')) return 'completed';
+  if (e.status === 'completed' && status === 'completed') return 'completed';
+  return anyProgress(sessions, e.checklist) ? 'in_progress' : 'not_started';
+}
+
+/**
+ * The status after a step was (un)ticked: done once the last step is; unticking one reopens an exercise that isn't
+ * done through its sessions; otherwise in progress or not started.
+ */
+export function statusAfterStep(e: Exercise, checklist: { done: boolean }[]): ExerciseStatus {
+  if (workDone(e.sessions, checklist)) return 'completed';
+  return anyProgress(e.sessions, checklist) ? 'in_progress' : 'not_started';
+}
+
+/** After other changes (planned days, steps edited in the editor): the status only moves up to what they show. */
+function promoted(status: ExerciseStatus, sessions: ExerciseSession[], checklist: { done: boolean }[]): ExerciseStatus {
+  const shown = shownStatus(sessions, checklist);
+  return STATUS_RANK[shown] > STATUS_RANK[status] ? shown : status;
+}
+
+/**
+ * The sessions after setting the whole exercise's status by hand: done ticks off every session, not started clears
+ * them, in progress leaves them as they are (each session is only started when that day's work is).
+ */
+export function withStatus(sessions: ExerciseSession[], status: ExerciseStatus): ExerciseSession[] {
+  return status === 'in_progress' ? sessions : sessions.map((s) => ({ ...s, status }));
+}
+
+/** With a single planned day, its session is the exercise: it always has the exercise's status. */
+function singleFollows(sessions: ExerciseSession[], status: ExerciseStatus): ExerciseSession[] {
+  return sessions.length === 1 ? [{ ...sessions[0], status }] : sessions;
+}
+
+/**
+ * Sessions for a new list of planned days. Days that stay keep their progress; new days take over the progress of
+ * removed ones in order (so moving a whole pattern, e.g. in a series edit, keeps it); any further new day starts
+ * not started, or done if the exercise is done (so adding a day never reopens a finished exercise).
+ */
+export function alignSessions(sessions: ExerciseSession[], dates: ISODate[], done: boolean): ExerciseSession[] {
+  const byDate = new Map(sessions.map((s) => [s.date, s.status]));
+  const freed = sessions.filter((s) => !dates.includes(s.date)).map((s) => s.status);
+  const extra: ExerciseStatus = done ? 'completed' : 'not_started';
+  return dates.map((date) => ({ date, status: byDate.get(date) ?? freed.shift() ?? extra }));
+}
+
+/**
+ * Applies an editor change to the status and keeps "handed in implies completed": a newly set handedIn wins, then a
+ * status set by hand; otherwise the status moves up to what the (re-planned) sessions and steps show.
+ */
+function applyProgress(u: Exercise, c: ExerciseChanges, checklist: { done: boolean }[]): void {
+  if (c.handedIn) u.status = 'completed';
+  else if (c.status !== undefined) u.status = c.status;
+  else u.status = promoted(u.status, u.sessions, checklist);
+  if (c.handedIn || c.status !== undefined) u.sessions = withStatus(u.sessions, u.status);
+  if (u.status !== 'completed') u.handedIn = false;
+}
+
+/** Override fields for the changed keys ('checklist' is handled separately: only a changed structure counts). */
 function changedFields(c: ExerciseChanges): OverridableField[] {
   return CHANGE_FIELDS.filter(([, key]) => c[key] !== undefined).map(([f]) => f);
 }
@@ -222,17 +300,28 @@ export class StudyService {
   }
 
   createSemester(input: SemesterInput): Semester {
-    const v = this.semesterInput(input);
-    const t = this.stamp();
-    const r = this.run(
-      'INSERT INTO semesters (name, start_date, end_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-      v.name,
-      v.startDate,
-      v.endDate,
-      t,
-      t,
-    );
-    return this.liveSemester(Number(r.lastInsertRowid));
+    return this.tx(() => {
+      const v = this.semesterInput(input);
+      const t = this.stamp();
+      const r = this.run(
+        'INSERT INTO semesters (name, start_date, end_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+        v.name,
+        v.startDate,
+        v.endDate,
+        t,
+        t,
+      );
+      const id = Number(r.lastInsertRowid);
+      this.run(
+        'INSERT INTO subjects (semester_id, name, color, personal, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)',
+        id,
+        PERSONAL_SUBJECT.name,
+        PERSONAL_SUBJECT.color,
+        t,
+        t,
+      );
+      return this.liveSemester(id);
+    });
   }
 
   updateSemester(id: Id, input: SemesterInput): Semester {
@@ -245,9 +334,9 @@ export class StudyService {
   deleteSemester(id: Id): DeleteResult {
     return this.tx(() => {
       const sem = this.liveSemester(id);
-      const n = this.get<{ n: number }>('SELECT count(*) n FROM subjects WHERE semester_id = ? AND deleted_at IS NULL', id)!.n;
+      const n = this.get<{ n: number }>('SELECT count(*) n FROM subjects WHERE semester_id = ? AND deleted_at IS NULL AND personal = 0', id)!.n;
       const label = `Semester "${sem.name}"`;
-      const batch = this.newTrashBatch('semester', label, `${n} subject${n === 1 ? '' : 's'} with all lectures and exercises`);
+      const batch = this.newTrashBatch('semester', label, `${n} subject${n === 1 ? '' : 's'} with all lectures, exercises and tasks`);
       this.run('UPDATE semesters SET deleted_at = ?, trash_batch_id = ? WHERE id = ?', this.stamp(), batch, id);
       return { trashId: batch, label };
     });
@@ -255,7 +344,7 @@ export class StudyService {
 
   // ---------------------------------------------------------------- subjects
 
-  private mapSubject = (r: any): Subject => ({ id: r.id, semesterId: r.semester_id, name: r.name, color: r.color });
+  private mapSubject = (r: any): Subject => ({ id: r.id, semesterId: r.semester_id, name: r.name, color: r.color, personal: !!r.personal });
 
   private liveSubject(id: Id): Subject {
     const r = this.get(
@@ -267,6 +356,13 @@ export class StudyService {
     return this.mapSubject(r);
   }
 
+  /** A live subject that can have lectures and exams, i.e. not the personal one. */
+  private courseSubject(id: Id, what: 'lectures' | 'exams'): Subject {
+    const s = this.liveSubject(id);
+    if (s.personal) throw new UserError(`Personal tasks can't have ${what}. Pick a subject.`);
+    return s;
+  }
+
   private subjectInput(input: SubjectInput): SubjectInput {
     const name = this.text(input?.name, 'Subject name');
     if (typeof input.color !== 'string' || !COLOR_RE.test(input.color)) throw new UserError('Please pick a color.');
@@ -274,7 +370,7 @@ export class StudyService {
   }
 
   listSubjects(semesterId: Id): Subject[] {
-    return this.all('SELECT * FROM subjects WHERE semester_id = ? AND deleted_at IS NULL ORDER BY name COLLATE NOCASE, id', semesterId).map(
+    return this.all('SELECT * FROM subjects WHERE semester_id = ? AND deleted_at IS NULL ORDER BY personal, name COLLATE NOCASE, id', semesterId).map(
       this.mapSubject,
     );
   }
@@ -297,8 +393,9 @@ export class StudyService {
   deleteSubject(id: Id): DeleteResult {
     return this.tx(() => {
       const s = this.liveSubject(id);
+      if (s.personal) throw new UserError(`"${s.name}" holds your personal tasks and can't be deleted. Delete the tasks instead.`);
       const sem = this.liveSemester(s.semesterId);
-      const lectures = this.get<{ n: number }>('SELECT count(*) n FROM lectures WHERE subject_id = ? AND deleted_at IS NULL', id)!.n;
+      const lectures =this.get<{ n: number }>('SELECT count(*) n FROM lectures WHERE subject_id = ? AND deleted_at IS NULL', id)!.n;
       const exercises = this.get<{ n: number }>('SELECT count(*) n FROM exercises WHERE subject_id = ? AND deleted_at IS NULL', id)!.n;
       const label = `Subject "${s.name}"`;
       const batch = this.newTrashBatch('subject', label, `${sem.name} · ${lectures} lecture(s) · ${exercises} exercise(s)`);
@@ -361,7 +458,7 @@ export class StudyService {
 
   createLecture(input: LectureInput): Lecture {
     const v = this.lectureInput(input);
-    this.liveSubject(v.subjectId);
+    this.courseSubject(v.subjectId, 'lectures');
     const t = this.stamp();
     const r = this.run(
       'INSERT INTO lectures (subject_id, title, weekday, start_time, end_time, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -379,7 +476,7 @@ export class StudyService {
   updateLecture(id: Id, input: LectureInput): Lecture {
     const existing = this.liveLecture(id);
     const v = this.lectureInput(input);
-    const newSubject = this.liveSubject(v.subjectId);
+    const newSubject = this.courseSubject(v.subjectId, 'lectures');
     if (newSubject.semesterId !== this.liveSubject(existing.subjectId).semesterId) {
       throw new UserError('A lecture can only be moved to a subject in the same semester.');
     }
@@ -501,20 +598,20 @@ export class StudyService {
 
   // --------------------------------------------------------------- exercises
 
-  /** Maps exercise rows and attaches each exercise's planned dates and checklist (queries per 500 rows). */
+  /** Maps exercise rows and attaches each exercise's sessions and checklist (queries per 500 rows). */
   private toExercises(rows: any[]): Exercise[] {
-    const dates = new Map<Id, ISODate[]>();
+    const sessions = new Map<Id, ExerciseSession[]>();
     const checklists = new Map<Id, ChecklistItem[]>();
     const ids = rows.map((r) => r.id as Id);
     for (let i = 0; i < ids.length; i += 500) {
       const chunk = ids.slice(i, i + 500);
       const marks = chunk.map(() => '?').join(',');
-      for (const d of this.all<{ exercise_id: Id; date: ISODate }>(
-        `SELECT exercise_id, date FROM exercise_plan_dates WHERE exercise_id IN (${marks}) ORDER BY date`,
+      for (const d of this.all<{ exercise_id: Id; date: ISODate; status: ExerciseStatus }>(
+        `SELECT exercise_id, date, status FROM exercise_plan_dates WHERE exercise_id IN (${marks}) ORDER BY date`,
         ...chunk,
       )) {
-        if (!dates.has(d.exercise_id)) dates.set(d.exercise_id, []);
-        dates.get(d.exercise_id)!.push(d.date);
+        if (!sessions.has(d.exercise_id)) sessions.set(d.exercise_id, []);
+        sessions.get(d.exercise_id)!.push({ date: d.date, status: d.status });
       }
       for (const c of this.all<{ id: Id; exercise_id: Id; text: string; done: number }>(
         `SELECT id, exercise_id, text, done FROM exercise_checklist_items WHERE exercise_id IN (${marks}) ORDER BY position, id`,
@@ -525,7 +622,8 @@ export class StudyService {
       }
     }
     return rows.map((r) => {
-      const plannedDates = dates.get(r.id) ?? [r.planned_date];
+      const own = sessions.get(r.id) ?? [{ date: r.planned_date, status: r.status }];
+      const plannedDates = own.map((x) => x.date);
       return {
         id: r.id,
         subjectId: r.subject_id,
@@ -535,6 +633,7 @@ export class StudyService {
         description: r.description,
         plannedDate: plannedDates[0],
         plannedDates,
+        sessions: own,
         deadlineDate: r.deadline_date ?? null,
         status: r.status,
         handedIn: !!r.handed_in,
@@ -588,10 +687,11 @@ export class StudyService {
     return value;
   }
 
-  private savePlannedDates(exerciseId: Id, dates: ISODate[]): void {
+  private saveSessions(exerciseId: Id, sessions: ExerciseSession[]): void {
     this.run('DELETE FROM exercise_plan_dates WHERE exercise_id = ?', exerciseId);
-    for (const d of dates) this.run('INSERT INTO exercise_plan_dates (exercise_id, date) VALUES (?, ?)', exerciseId, d);
+    for (const s of sessions) this.run('INSERT INTO exercise_plan_dates (exercise_id, date, status) VALUES (?, ?, ?)', exerciseId, s.date, s.status);
   }
+
 
   /** Validates a checklist: every step needs text. */
   private checklistInput(value: unknown): ChecklistItemInput[] {
@@ -607,8 +707,12 @@ export class StudyService {
     );
   }
 
-  private insertExercise(e: Omit<Exercise, 'id' | 'overrides' | 'plannedDate' | 'checklist'> & { checklist: ChecklistItemInput[] }): Id {
+  /** Inserts an exercise; done ticks off every session, otherwise they start not started; all steps ticked = done. */
+  private insertExercise(e: Omit<Exercise, 'id' | 'overrides' | 'plannedDate' | 'sessions' | 'checklist'> & { checklist: ChecklistItemInput[] }): Id {
     const dates = [...new Set(e.plannedDates)].sort();
+    const fresh = dates.map((date) => ({ date, status: 'not_started' as const }));
+    const status = promoted(e.status, fresh, e.checklist);
+    const sessions = singleFollows(withStatus(fresh, status === 'completed' ? 'completed' : 'not_started'), status);
     const t = this.stamp();
     const r = this.run(
       `INSERT INTO exercises (subject_id, series_id, sequence_number, title, description, planned_date, deadline_date, status, handed_in, created_at, updated_at)
@@ -620,13 +724,13 @@ export class StudyService {
       e.description,
       dates[0],
       e.deadlineDate,
-      e.status,
+      status,
       e.handedIn && e.deadlineDate !== null ? 1 : 0,
       t,
       t,
     );
     const id = Number(r.lastInsertRowid);
-    this.savePlannedDates(id, dates);
+    this.saveSessions(id, sessions);
     this.saveChecklist(id, e.checklist);
     return id;
   }
@@ -728,8 +832,14 @@ export class StudyService {
     });
   }
 
+  /**
+   * Writes an exercise. Its sessions follow `plannedDates` (see alignSessions); handedIn is kept only while the
+   * status is completed. Callers set the status (shownStatus / promoted / a status set by hand).
+   */
   private writeExercise(e: Exercise): void {
     const dates = [...new Set(e.plannedDates)].sort();
+    const sessions = singleFollows(alignSessions(e.sessions, dates, e.status === 'completed'), e.status);
+    const status = e.status;
     this.run(
       `UPDATE exercises SET subject_id = ?, title = ?, description = ?, planned_date = ?, deadline_date = ?, status = ?, handed_in = ?, overrides = ?, updated_at = ?
        WHERE id = ?`,
@@ -738,13 +848,13 @@ export class StudyService {
       e.description,
       dates[0],
       e.deadlineDate,
-      e.status,
-      e.handedIn && e.deadlineDate !== null ? 1 : 0,
+      status,
+      e.handedIn && status === 'completed' && e.deadlineDate !== null ? 1 : 0,
       JSON.stringify([...new Set(e.overrides)].sort()),
       this.stamp(),
       e.id,
     );
-    this.savePlannedDates(e.id, dates);
+    this.saveSessions(e.id, sessions);
   }
 
   /** Validates `changes` and drops fields that equal the current value. */
@@ -798,7 +908,8 @@ export class StudyService {
       if (scope === 'this') {
         const { checklist, ...c } = this.normalizeChanges(e, input.changes ?? {}, false, null);
         const updated: Exercise = { ...e, ...c };
-        settleProgress(updated, c);
+        updated.sessions = alignSessions(e.sessions, updated.plannedDates, e.status === 'completed');
+        applyProgress(updated, c, checklist ?? e.checklist);
         this.checkPlanned(updated.plannedDates, updated.deadlineDate);
         if (e.seriesId !== null) {
           updated.overrides.push(...changedFields(c));
@@ -842,13 +953,11 @@ export class StudyService {
         if (apply.includes('description')) u.description = c.description!;
         if (apply.includes('subjectId')) u.subjectId = c.subjectId!;
         // Planned dates: the edited pattern, moved to each occurrence's position in the series.
-        if (apply.includes('plannedDate')) u.plannedDates = c.plannedDates!.map((d) => addDays(d, step * (t.sequenceNumber! - e.sequenceNumber!)));
-        if (apply.includes('deadlineDate')) u.deadlineDate = newDeadline(t);
-        if (t.id === e.id) {
-          if (c.status !== undefined) u.status = c.status;
-          if (c.handedIn !== undefined) u.handedIn = c.handedIn;
-          settleProgress(u, c);
+        if (apply.includes('plannedDate')) {
+          u.plannedDates = c.plannedDates!.map((d) => addDays(d, step * (t.sequenceNumber! - e.sequenceNumber!)));
+          u.sessions = alignSessions(t.sessions, u.plannedDates, t.status === 'completed');
         }
+        if (apply.includes('deadlineDate')) u.deadlineDate = newDeadline(t);
         // Checklist: this exercise gets it as edited (with its done states); the others get the same steps,
         // keeping the done state of steps they already had.
         if (t.id === e.id && checklist) checklistWrites.set(t.id, checklist);
@@ -856,6 +965,12 @@ export class StudyService {
           const done = new Set(t.checklist.filter((i) => i.done).map((i) => i.text));
           checklistWrites.set(t.id, checklist!.map((i) => ({ text: i.text, done: done.has(i.text) })));
         }
+        // Status: this exercise as edited; the others only move up to what their sessions and steps now show.
+        const steps = checklistWrites.get(t.id) ?? t.checklist;
+        if (t.id === e.id) {
+          if (c.handedIn !== undefined) u.handedIn = c.handedIn;
+          applyProgress(u, c, steps);
+        } else u.status = promoted(u.status, u.sessions, steps);
         if (u.deadlineDate !== null && u.plannedDates[u.plannedDates.length - 1] > u.deadlineDate) invalid.push(u.title);
         updates.push(u);
       }
@@ -882,16 +997,33 @@ export class StudyService {
   }
 
   setExerciseStatus(id: Id, status: ExerciseStatus): void {
-    const e = this.liveExercise(id);
-    const s = this.status(status);
-    this.run('UPDATE exercises SET status = ?, handed_in = ?, updated_at = ? WHERE id = ?', s, s === 'completed' && e.handedIn ? 1 : 0, this.stamp(), e.id);
+    this.tx(() => {
+      const e = this.liveExercise(id);
+      const s = this.status(status);
+      // Done stays handed in; anything else clears it (writeExercise).
+      this.writeExercise({ ...e, status: s, sessions: withStatus(e.sessions, s) });
+    });
   }
 
   setExerciseHandedIn(id: Id, handedIn: boolean): void {
-    const e = this.liveExercise(id);
-    const h = this.handedIn(handedIn);
-    if (h && e.deadlineDate === null) throw new UserError(`"${e.title}" has no deadline, so there is nothing to hand in.`);
-    this.run('UPDATE exercises SET status = ?, handed_in = ?, updated_at = ? WHERE id = ?', h ? 'completed' : e.status, h ? 1 : 0, this.stamp(), e.id);
+    this.tx(() => {
+      const e = this.liveExercise(id);
+      const h = this.handedIn(handedIn);
+      if (h && e.deadlineDate === null) throw new UserError(`"${e.title}" has no deadline, so there is nothing to hand in.`);
+      this.writeExercise(h ? { ...e, handedIn: true, status: 'completed', sessions: withStatus(e.sessions, 'completed') } : { ...e, handedIn: false });
+    });
+  }
+
+  setSessionStatus(id: Id, date: ISODate, status: ExerciseStatus): Exercise {
+    return this.tx(() => {
+      const e = this.liveExercise(id);
+      const d = this.date(date, 'Planned date');
+      const s = this.status(status);
+      if (!e.plannedDates.includes(d)) throw new UserError('This planned day no longer exists; the exercise was changed in the meantime.');
+      const sessions = e.sessions.map((x) => (x.date === d ? { ...x, status: s } : x));
+      this.writeExercise({ ...e, sessions, status: statusAfterSession(e, sessions, s) });
+      return this.liveExercise(id);
+    });
   }
 
   setChecklistItemDone(itemId: Id, done: boolean): Exercise {
@@ -900,14 +1032,18 @@ export class StudyService {
       if (!item) throw new UserError('This checklist step no longer exists; the exercise was changed in the meantime.');
       const e = this.liveExercise(item.exercise_id);
       this.run('UPDATE exercise_checklist_items SET done = ? WHERE id = ?', done ? 1 : 0, itemId);
-      if (done && e.status === 'not_started') {
-        this.run("UPDATE exercises SET status = 'in_progress', updated_at = ? WHERE id = ?", this.stamp(), e.id);
-      }
+      // The status follows: done once every step is (or every session), in progress once one is.
+      const checklist = e.checklist.map((c) => (c.id === itemId ? { ...c, done } : c));
+      const status = statusAfterStep(e, checklist);
+      if (status !== e.status) this.writeExercise({ ...e, status });
       return this.liveExercise(e.id);
     });
   }
 
-  /** Moves one planned date. If the exercise is already planned on `toDate`, the two merge. */
+  /**
+   * Moves one planned date with its progress. If the exercise is already planned on `toDate`, the two sessions merge
+   * (into in progress when only one of them was done or started).
+   */
   moveExercise(id: Id, fromDate: ISODate, toDate: ISODate): Exercise {
     return this.tx(() => {
       const e = this.liveExercise(id);
@@ -917,8 +1053,12 @@ export class StudyService {
       if (from === to) return e;
       this.checkPlanned([to], e.deadlineDate, e.title);
       const plannedDates = [...new Set(e.plannedDates.map((d) => (d === from ? to : d)))].sort();
+      const moved = sessionStatus(e, from);
+      const target = e.sessions.find((s) => s.date === to);
+      const status: ExerciseStatus = !target || target.status === moved ? moved : 'in_progress';
+      const sessions = plannedDates.map((date) => ({ date, status: date === to ? status : sessionStatus(e, date) }));
       const overrides = e.seriesId !== null ? [...e.overrides, 'plannedDate' as const] : e.overrides;
-      this.writeExercise({ ...e, plannedDates, overrides });
+      this.writeExercise({ ...e, plannedDates, sessions, overrides, status: promoted(e.status, sessions, e.checklist) });
       return this.liveExercise(id);
     });
   }
@@ -1007,7 +1147,7 @@ export class StudyService {
 
   createExam(input: ExamInput): Exam {
     const v = this.examInput(input);
-    this.liveSubject(v.subjectId);
+    this.courseSubject(v.subjectId, 'exams');
     const t = this.stamp();
     const r = this.run(
       `INSERT INTO exams (subject_id, kind, title, date, start_time, end_time, location, notes, created_at, updated_at)
@@ -1029,7 +1169,7 @@ export class StudyService {
   updateExam(id: Id, input: ExamInput): Exam {
     const existing = this.liveExam(id);
     const v = this.examInput(input);
-    if (this.liveSubject(v.subjectId).semesterId !== this.liveSubject(existing.subjectId).semesterId) {
+    if (this.courseSubject(v.subjectId, 'exams').semesterId !== this.liveSubject(existing.subjectId).semesterId) {
       throw new UserError('An exam can only be moved to a subject in the same semester.');
     }
     this.run(
@@ -1134,7 +1274,7 @@ export class StudyService {
       tallies.set(d, x);
     };
     for (const o of lectures) if (o.date <= t) tally(o.date, o.completed);
-    for (const e of exercises) for (const d of e.plannedDates) if (d >= sem.startDate && d <= t) tally(d, e.status === 'completed');
+    for (const e of exercises) for (const s of e.sessions) if (s.date >= sem.startDate && s.date <= t) tally(s.date, s.status === 'completed');
 
     const byTime = (a: LectureOccurrence, b: LectureOccurrence) =>
       a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime) || a.title.localeCompare(b.title);

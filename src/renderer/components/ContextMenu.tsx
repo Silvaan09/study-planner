@@ -8,7 +8,12 @@ export interface MenuItem {
   onSelect: () => void;
 }
 
-export type MenuEntry = MenuItem | 'separator';
+/** A small label above a group of items. */
+export interface MenuHeading {
+  heading: ReactNode;
+}
+
+export type MenuEntry = MenuItem | MenuHeading | 'separator';
 
 export interface MenuState {
   x: number;
@@ -50,6 +55,10 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () =>
       {menu.items.map((item, i) =>
         item === 'separator' ? (
           <div key={i} className="menu-sep" />
+        ) : 'heading' in item ? (
+          <div key={i} className="menu-heading">
+            {item.heading}
+          </div>
         ) : (
           <button
             key={i}

@@ -3,7 +3,7 @@ import { api } from '../api';
 import { useLoad, useNow, useUi } from '../ui';
 import { useChecklistToggle, useExerciseProgress, useWeekCompletion } from '../actions';
 import { diffDays, formatDate, startOfWeek, timeToMinutes, todayISO, weeksBetween, WEEKDAY_NAMES, weekday, MONTH_NAMES, type ISODate } from '../../shared/dates';
-import { EXAM_KIND_LABEL, EXERCISE_STAGE_LABEL, EXERCISE_STATUS_LABEL, examTitle, exerciseDueBy, exerciseStage, type Exam, type Exercise, type ExerciseStage, type ExerciseStatus, type Id, type LectureOccurrence, type Semester, type Subject } from '../../shared/types';
+import { EXAM_KIND_LABEL, EXERCISE_STAGE_LABEL, EXERCISE_STATUS_LABEL, examTitle, exerciseDueBy, exerciseStage, sessionStatus, type Exam, type Exercise, type ExerciseStage, type ExerciseStatus, type Id, type LectureOccurrence, type Semester, type Subject } from '../../shared/types';
 import { ExamDialog, ExerciseDialog } from '../dialogs';
 import { FocusPill } from '../components/FocusPill';
 import { ChecklistList, ChecklistProgress } from '../components/Checklist';
@@ -61,7 +61,7 @@ export function TodayView({
 }) {
   const ui = useUi();
   const completing = useWeekCompletion(semester.id);
-  const toggleStep = useChecklistToggle(semester.id);
+  const toggleStep = useChecklistToggle();
   const progress = useExerciseProgress(semester.id);
   const now = useNow();
   const today = todayISO(now);
@@ -87,7 +87,7 @@ export function TodayView({
 
   const semWeeks = weeksBetween(semester.startDate, semester.endDate);
   const weekIndex = semWeeks.indexOf(startOfWeek(today));
-  const doneToday = v.lectures.filter((l) => l.completed).length + v.planned.filter((e) => e.status === 'completed').length;
+  const doneToday = v.lectures.filter((l) => l.completed).length + v.planned.filter((e) => sessionStatus(e, today) === 'completed').length;
   const totalToday = v.lectures.length + v.planned.length;
   const examsToday = v.exams.filter((x) => x.date === today);
 
@@ -107,8 +107,8 @@ export function TodayView({
   // ---- actions (same flows as the timetable and Outstanding)
   const toggleLecture = (o: LectureOccurrence) =>
     ui.run(() => completing(o.completed ? [] : [o.weekStart], () => api.setLectureCompleted(o.lectureId, o.weekStart, !o.completed)));
-  /** To do today: the work only (handing in belongs to the deadline). */
-  const setStatus = (e: Exercise, status: ExerciseStatus) => progress.setStatus(e, status, { toast: true });
+  /** To do today: today's session only (handing in belongs to the deadline). */
+  const setSession = (e: Exercise, status: ExerciseStatus) => progress.setSession(e, today, status, { toast: true });
   const openExercise = (id: Id) => ui.dialog((close) => <ExerciseDialog semester={semester} subjects={subjects} exerciseId={id} close={close} />);
   const openExam = (id: Id) => ui.dialog((close) => <ExamDialog semester={semester} subjects={subjects} examId={id} close={close} />);
 
@@ -167,34 +167,43 @@ export function TodayView({
     return <span className="badge">Due {n < 7 ? formatDate(e.deadlineDate, { weekday: true }) : `in ${plural(n, 'day')}`}</span>;
   };
 
-  const taskRow = (e: Exercise) => (
-    <div key={`t${e.id}`} className={`today-task status-${e.status}`} style={{ '--c': colorOf(e.subjectId) } as CSSProperties}>
-      <div className="today-row">
-        <button className="status-btn" onClick={() => void setStatus(e, NEXT_STATUS[e.status])} title={`${EXERCISE_STATUS_LABEL[e.status]} — click to change`}>
-          <StatusIcon status={e.status} size={18} />
-        </button>
-        <span className="today-main clickable" onClick={() => openExercise(e.id)}>
-          <span className="today-title">{e.title}</span>
-          <span className="today-meta">
-            <span className="subject-dot" /> {nameOf(e.subjectId)}
-            {e.plannedDates.length > 1 && ` · session ${e.plannedDates.indexOf(today) + 1} of ${e.plannedDates.length}`}
-            {e.checklist.length > 0 && e.status !== 'completed' && (
-              <>
-                {' · '}
-                <ChecklistProgress exercise={e} compact />
-              </>
-            )}
+  const taskRow = (e: Exercise) => {
+    const status = sessionStatus(e, today);
+    const sessions = e.plannedDates.length;
+    return (
+      <div key={`t${e.id}`} className={`today-task status-${status}`} style={{ '--c': colorOf(e.subjectId) } as CSSProperties}>
+        <div className="today-row">
+          <button
+            className="status-btn"
+            onClick={() => void setSession(e, NEXT_STATUS[status])}
+            title={`${EXERCISE_STATUS_LABEL[status]} — click to change${sessions > 1 ? " (today's session only)" : ''}`}
+          >
+            <StatusIcon status={status} size={18} />
+          </button>
+          <span className="today-main clickable" onClick={() => openExercise(e.id)}>
+            <span className="today-title">{e.title}</span>
+            <span className="today-meta">
+              <span className="subject-dot" /> {nameOf(e.subjectId)}
+              {sessions > 1 &&
+                ` · session ${e.plannedDates.indexOf(today) + 1} of ${sessions} (${e.sessions.filter((x) => x.status === 'completed').length} done)`}
+              {e.checklist.length > 0 && e.status !== 'completed' && (
+                <>
+                  {' · '}
+                  <ChecklistProgress exercise={e} compact />
+                </>
+              )}
+            </span>
           </span>
-        </span>
-        {!e.handedIn && dueLabel(e)}
-      </div>
-      {e.checklist.length > 0 && e.status !== 'completed' && (
-        <div className="today-checklist">
-          <ChecklistList exercise={e} onToggle={(id, done) => void toggleStep(id, done)} />
+          {!e.handedIn && dueLabel(e)}
         </div>
-      )}
-    </div>
-  );
+        {e.checklist.length > 0 && e.status !== 'completed' && (
+          <div className="today-checklist">
+            <ChecklistList exercise={e} onToggle={(id, done) => void toggleStep(id, done)} />
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const nextExam = v.exams[0];
   const streak = data?.streak;
@@ -218,7 +227,7 @@ export function TodayView({
       {data && (
         <>
           <div className="stat-row">
-            <div className={`stat stat-streak ${streak!.current > 0 ? 'on' : ''}`} title="Days in a row on which every lecture and every exercise planned that day was completed. Days with nothing scheduled don't count or break it.">
+            <div className={`stat stat-streak ${streak!.current > 0 ? 'on' : ''}`} title="Days in a row on which every lecture and every exercise or task session planned that day was completed. Days with nothing scheduled don't count or break it.">
               <Flame size={20} />
               <div>
                 <strong>{plural(streak!.current, 'day')}</strong>
@@ -295,7 +304,9 @@ export function TodayView({
 
               <Card title="To do today" icon={<ListTodo size={16} />}>
                 {v.planned.map(taskRow)}
-                {v.planned.length === 0 && <p className="card-empty">Nothing planned for today. Drag exercises onto today in the timetable, or plan them in the exercise editor.</p>}
+                {v.planned.length === 0 && (
+                  <p className="card-empty">Nothing planned for today. Drag exercises and tasks onto today in the timetable, or plan them in their editor.</p>
+                )}
               </Card>
             </div>
 

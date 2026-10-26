@@ -1,6 +1,6 @@
 // Demo semester for manual testing and the README screenshots (`npm run seed-demo -- <empty folder>`).
 // Never used by the app itself. Completion states are derived from `today`, so the data looks like a
-// semester in progress: past lectures and exercises are mostly done, a few are left open on purpose.
+// semester in progress: past lectures and exercises (and their sessions) are mostly done, a few are left open on purpose.
 import { dateInWeek, weeksBetween, type ISODate } from '../shared/dates';
 import type { ExamKind, Exercise, Id } from '../shared/types';
 import type { StudyService } from './service';
@@ -32,7 +32,8 @@ const LECTURES: [SubjectKey, string, number, string, string][] = [
 ];
 
 interface DemoExercise {
-  subject: SubjectKey;
+  /** 'personal' = a personal task (the semester's built-in subject). */
+  subject: SubjectKey | 'personal';
   title: string;
   plannedDates: ISODate[];
   /** null = no deadline (done once the work is done, overdue after the last planned day). */
@@ -78,6 +79,16 @@ const EXERCISES: DemoExercise[] = [
   { subject: 'chemistry', title: 'Reading: Atomic Structure', plannedDates: ['2026-09-18'], deadlineDate: null },
   { subject: 'chemistry', title: 'Reading: Periodic Table', plannedDates: ['2026-09-25'], deadlineDate: null },
   { subject: 'chemistry', title: 'Reading: Reaction Kinetics', plannedDates: ['2026-10-08', '2026-10-09'], deadlineDate: null },
+  // Personal tasks.
+  { subject: 'personal', title: 'Renew bike insurance', plannedDates: ['2026-09-21'], deadlineDate: '2026-09-23' },
+  { subject: 'personal', title: 'Call the landlord about the heating', plannedDates: ['2026-09-21'], deadlineDate: null },
+  {
+    subject: 'personal',
+    title: 'Apply for student job',
+    plannedDates: ['2026-09-29', '2026-10-01'],
+    deadlineDate: '2026-10-02',
+    steps: ['Update CV', 'Write cover letter', 'Send application'],
+  },
 ];
 
 // [subject, kind, title, date, start, end, room]
@@ -102,6 +113,7 @@ export interface DemoSummary {
   subjects: number;
   lectures: number;
   exercises: number;
+  tasks: number;
   exams: number;
 }
 
@@ -109,10 +121,11 @@ export interface DemoSummary {
 export function seedDemo(svc: StudyService, today: ISODate): DemoSummary {
   return svc.tx(() => {
     const sem = svc.createSemester(SEMESTER);
-    const subjectIds = {} as Record<SubjectKey, Id>;
+    const subjectIds = {} as Record<SubjectKey | 'personal', Id>;
     for (const [key, s] of Object.entries(SUBJECTS) as [SubjectKey, (typeof SUBJECTS)[SubjectKey]][]) {
       subjectIds[key] = svc.createSubject({ semesterId: sem.id, ...s }).id;
     }
+    subjectIds.personal = svc.listSubjects(sem.id).find((s) => s.personal)!.id;
 
     for (const [subject, title, weekday, startTime, endTime] of LECTURES) {
       const lecture = svc.createLecture({ subjectId: subjectIds[subject], title, weekday, startTime, endTime });
@@ -149,7 +162,13 @@ export function seedDemo(svc: StudyService, today: ISODate): DemoSummary {
       for (const step of done) svc.setChecklistItemDone(step.id, true);
       if (handedIn) svc.setExerciseHandedIn(e.id, true);
       else if (worked) svc.setExerciseStatus(e.id, 'completed');
-      else if (e.plannedDate < today) svc.setExerciseStatus(e.id, 'in_progress');
+      else if (e.plannedDate < today) {
+        // Started: past sessions done, later ones not started; when every session is past, the last is still in progress.
+        for (const d of e.plannedDates) {
+          const last = d === e.plannedDates[e.plannedDates.length - 1];
+          svc.setSessionStatus(e.id, d, d >= today ? 'not_started' : last ? 'in_progress' : 'completed');
+        }
+      }
     }
 
     for (const [subject, kind, title, date, startTime, endTime, location] of EXAMS) {
@@ -160,7 +179,8 @@ export function seedDemo(svc: StudyService, today: ISODate): DemoSummary {
       semesterId: sem.id,
       subjects: Object.keys(SUBJECTS).length,
       lectures: LECTURES.length,
-      exercises: exercises.length,
+      exercises: exercises.filter((e) => e.subjectId !== subjectIds.personal).length,
+      tasks: exercises.filter((e) => e.subjectId === subjectIds.personal).length,
       exams: EXAMS.length,
     };
   });

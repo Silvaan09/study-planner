@@ -759,7 +759,7 @@ describe('trash', () => {
     svc.setLectureCompleted(l.id, '2026-09-14', true);
     svc.createExercise({ subjectId: math.id, title: 'PS', description: 'notes', plannedDates: ['2026-09-15'], deadlineDate: '2026-09-18' });
     const del = svc.deleteSubject(math.id);
-    expect(svc.listSubjects(sem.id)).toHaveLength(0);
+    expect(svc.listSubjects(sem.id).map((s) => s.name)).toEqual(['Personal']);
     expect(svc.getWeek(sem.id, '2026-09-14').lectures).toHaveLength(0);
     expect(svc.getWeek(sem.id, '2026-09-14').exercises).toHaveLength(0);
     svc.restoreTrash(del.trashId);
@@ -773,7 +773,7 @@ describe('trash', () => {
     svc.createLecture({ subjectId: phys.id, title: 'Mechanics', weekday: 1, startTime: '08:00', endTime: '10:00' });
     const del = svc.deleteSubject(math.id);
     svc.purgeTrash(del.trashId);
-    expect(svc.listSubjects(sem.id).map((s) => s.name)).toEqual(['Physics']);
+    expect(svc.listSubjects(sem.id).map((s) => s.name)).toEqual(['Physics', 'Personal']);
     expect(svc.getWeek(sem.id, '2026-09-14').lectures).toHaveLength(1);
   });
 
@@ -844,6 +844,233 @@ describe('persistence and migrations', () => {
     const reopened = openDatabase(dir);
     close = () => reopened.db.close();
     expect(reopened.schemaVersion).toBe(migrations.length);
-    expect(new StudyService(reopened.db).listSubjects(sem.id)).toHaveLength(1);
+    expect(new StudyService(reopened.db).listSubjects(sem.id).map((s) => s.name)).toEqual(['Mathematics', 'Personal']);
+  });
+});
+
+describe('sessions (progress per planned day)', () => {
+  const create = (plannedDates: string[], extra: object = {}) =>
+    svc.createExercise({ subjectId: math.id, title: 'Project', description: '', plannedDates, deadlineDate: '2026-10-02', ...extra })[0];
+  const states = (id: number) => svc.getExercise(id).sessions.map((s) => s.status);
+
+  it('checks off one session at a time; the exercise is done once every session is', () => {
+    const e = create(['2026-09-15', '2026-09-22', '2026-09-29']);
+    expect(e.sessions).toEqual([
+      { date: '2026-09-15', status: 'not_started' },
+      { date: '2026-09-22', status: 'not_started' },
+      { date: '2026-09-29', status: 'not_started' },
+    ]);
+    expect(svc.setSessionStatus(e.id, '2026-09-22', 'completed')).toMatchObject({ status: 'in_progress' });
+    expect(states(e.id)).toEqual(['not_started', 'completed', 'not_started']);
+    svc.setSessionStatus(e.id, '2026-09-15', 'completed');
+    expect(svc.setSessionStatus(e.id, '2026-09-29', 'completed').status).toBe('completed');
+    // Handed in, then one session reopened: the work isn't done any more, so it isn't handed in either.
+    svc.setExerciseHandedIn(e.id, true);
+    expect(svc.setSessionStatus(e.id, '2026-09-29', 'in_progress')).toMatchObject({ status: 'in_progress', handedIn: false });
+    // Back to nothing started.
+    for (const d of ['2026-09-15', '2026-09-22', '2026-09-29']) svc.setSessionStatus(e.id, d, 'not_started');
+    expect(svc.getExercise(e.id).status).toBe('not_started');
+    expect(() => svc.setSessionStatus(e.id, '2026-09-16', 'completed')).toThrow(/no longer exists/);
+  });
+
+  it('sets the whole exercise: done and not started apply to every session, in progress leaves them alone', () => {
+    const e = create(['2026-09-15', '2026-09-22', '2026-09-29']);
+    const ex = () => svc.getExercise(e.id);
+    // Started as a whole: no day is worked on yet.
+    svc.setExerciseStatus(e.id, 'in_progress');
+    expect([ex().status, states(e.id)]).toEqual(['in_progress', ['not_started', 'not_started', 'not_started']]);
+    svc.setSessionStatus(e.id, '2026-09-22', 'completed');
+    svc.setExerciseStatus(e.id, 'in_progress');
+    expect(states(e.id)).toEqual(['not_started', 'completed', 'not_started']);
+    svc.setExerciseStatus(e.id, 'completed');
+    expect(states(e.id)).toEqual(['completed', 'completed', 'completed']);
+    // Reopening by hand keeps the sessions: they were worked on, the exercise just isn't finished.
+    svc.setExerciseStatus(e.id, 'in_progress');
+    expect([ex().status, states(e.id)]).toEqual(['in_progress', ['completed', 'completed', 'completed']]);
+    svc.setExerciseHandedIn(e.id, true);
+    expect(ex()).toMatchObject({ status: 'completed', handedIn: true });
+    svc.setExerciseStatus(e.id, 'not_started');
+    expect(ex()).toMatchObject({ status: 'not_started', handedIn: false });
+    expect(states(e.id)).toEqual(['not_started', 'not_started', 'not_started']);
+    // Through the editor.
+    svc.updateExercise({ id: e.id, scope: 'this', changes: { status: 'completed', handedIn: true } });
+    expect(states(e.id)).toEqual(['completed', 'completed', 'completed']);
+    // A single planned day is the exercise itself: its session always has the exercise's status.
+    const [one] = svc.createExercise({ subjectId: math.id, title: 'One', description: '', plannedDates: ['2026-09-15'], deadlineDate: null, status: 'in_progress' });
+    expect(one.sessions).toEqual([{ date: '2026-09-15', status: 'in_progress' }]);
+    svc.setExerciseStatus(one.id, 'not_started');
+    svc.setExerciseStatus(one.id, 'in_progress');
+    expect(states(one.id)).toEqual(['in_progress']);
+  });
+
+  it('finishing one session leaves the others not started; the exercise is in progress until the last one', () => {
+    const e = create(['2026-09-15', '2026-09-22']);
+    svc.setSessionStatus(e.id, '2026-09-15', 'completed');
+    expect(svc.getExercise(e.id)).toMatchObject({ status: 'in_progress', sessions: [{ status: 'completed' }, { status: 'not_started' }] });
+    // The deadline card says "ready to hand in" only once the exercise is done.
+    expect(svc.setSessionStatus(e.id, '2026-09-22', 'completed').status).toBe('completed');
+  });
+
+  it('is done once every checklist step is ticked, and stays done while sessions are checked off', () => {
+    const [e] = svc.createExercise({
+      subjectId: math.id, title: 'Report', description: '', plannedDates: ['2026-09-15', '2026-09-22', '2026-09-29'], deadlineDate: '2026-10-02',
+      checklist: [{ text: 'Measure', done: false }, { text: 'Write', done: false }],
+    });
+    const [a, b] = e.checklist;
+    expect(svc.setChecklistItemDone(a.id, true)).toMatchObject({ status: 'in_progress', sessions: [{ status: 'not_started' }, { status: 'not_started' }, { status: 'not_started' }] });
+    expect(svc.setChecklistItemDone(b.id, true).status).toBe('completed');
+    // Checking off a session of a done exercise keeps it done; reopening one makes it in progress again.
+    expect(svc.setSessionStatus(e.id, '2026-09-15', 'completed').status).toBe('completed');
+    expect(svc.setSessionStatus(e.id, '2026-09-15', 'not_started').status).toBe('in_progress');
+    expect(svc.setSessionStatus(e.id, '2026-09-15', 'completed').status).toBe('in_progress');
+    // Unticking a step reopens it, unless every session is done.
+    svc.setChecklistItemDone(b.id, false);
+    expect(svc.setChecklistItemDone(b.id, true).status).toBe('completed');
+    expect(svc.setChecklistItemDone(b.id, false).status).toBe('in_progress');
+    for (const d of ['2026-09-22', '2026-09-29']) svc.setSessionStatus(e.id, d, 'completed');
+    expect(svc.getExercise(e.id).status).toBe('completed');
+    expect(svc.setChecklistItemDone(a.id, false).status).toBe('completed');
+    // Ticking every step in the editor finishes it too.
+    const [f] = svc.createExercise({
+      subjectId: math.id, title: 'F', description: '', plannedDates: ['2026-09-15', '2026-09-16'], deadlineDate: null,
+      checklist: [{ text: 'Step', done: false }],
+    });
+    svc.updateExercise({ id: f.id, scope: 'this', changes: { checklist: [{ text: 'Step', done: true }] } });
+    expect(svc.getExercise(f.id).status).toBe('completed');
+  });
+
+  it('keeps session progress when planned days change', () => {
+    const e = create(['2026-09-15', '2026-09-22']);
+    svc.setSessionStatus(e.id, '2026-09-15', 'completed');
+    // Dragging a session keeps its progress; dropping it onto another session merges them.
+    expect(svc.moveExercise(e.id, '2026-09-15', '2026-09-16').sessions).toEqual([
+      { date: '2026-09-16', status: 'completed' },
+      { date: '2026-09-22', status: 'not_started' },
+    ]);
+    expect(svc.moveExercise(e.id, '2026-09-16', '2026-09-22').sessions).toEqual([{ date: '2026-09-22', status: 'in_progress' }]);
+    // The editor: kept days keep their progress, a replaced day takes over the removed one's, extra days start fresh.
+    svc.updateExercise({ id: e.id, scope: 'this', changes: { plannedDates: ['2026-09-21', '2026-09-23', '2026-09-24'] } });
+    expect(states(e.id)).toEqual(['in_progress', 'not_started', 'not_started']);
+    // A day added to a finished exercise doesn't reopen it.
+    svc.setExerciseHandedIn(e.id, true);
+    svc.updateExercise({ id: e.id, scope: 'this', changes: { plannedDates: ['2026-09-21', '2026-09-23', '2026-09-24', '2026-09-25'] } });
+    expect(svc.getExercise(e.id)).toMatchObject({ status: 'completed', handedIn: true });
+  });
+
+  it('series edits move each occurrence’s sessions with their progress', () => {
+    const list = svc.createExercise({
+      subjectId: math.id, title: 'PS', description: '', plannedDates: ['2026-09-15'], deadlineDate: '2026-09-18',
+      recurrence: { intervalWeeks: 1, count: 3, firstNumber: 1 },
+    });
+    svc.setExerciseHandedIn(list[0].id, true);
+    svc.setSessionStatus(list[1].id, '2026-09-22', 'in_progress');
+    svc.updateExercise({ id: list[0].id, scope: 'all', changes: { plannedDates: ['2026-09-16'] } });
+    expect(list.map((e) => svc.getExercise(e.id).sessions)).toEqual([
+      [{ date: '2026-09-16', status: 'completed' }],
+      [{ date: '2026-09-23', status: 'in_progress' }],
+      [{ date: '2026-09-30', status: 'not_started' }],
+    ]);
+    expect(svc.getExercise(list[0].id).handedIn).toBe(true);
+  });
+
+  it('counts sessions for week progress, celebrations and the streak', () => {
+    const e = create(['2026-09-15', '2026-09-17', '2026-09-22']);
+    const week = (w: string) => weekProgress(svc.getWeek(sem.id, w));
+    expect(week('2026-09-14')).toMatchObject({ exercises: 2, exercisesDone: 0 });
+    const before = week('2026-09-14');
+    svc.setSessionStatus(e.id, '2026-09-15', 'completed');
+    svc.setSessionStatus(e.id, '2026-09-17', 'completed');
+    // The first week is complete although the exercise isn't.
+    expect(celebrationFor(before, week('2026-09-14'))).toBe('everything');
+    expect(week('2026-09-21')).toMatchObject({ exercises: 1, exercisesDone: 0 });
+    expect(svc.getExercise(e.id).status).toBe('in_progress');
+    expect(svc.getToday(sem.id, '2026-09-18').streak).toEqual({ current: 2, best: 2, today: 'empty' });
+  });
+});
+
+describe('personal tasks', () => {
+  const personal = () => svc.listSubjects(sem.id).find((s) => s.personal)!;
+
+  it('every semester has one personal subject, listed last, that holds tasks', () => {
+    const zoo = svc.createSubject({ semesterId: sem.id, name: 'Zoology', color: '#00aa00' });
+    expect(svc.listSubjects(sem.id).map((s) => [s.name, s.personal])).toEqual([
+      ['Mathematics', false],
+      ['Zoology', false],
+      ['Personal', true],
+    ]);
+    const spring = svc.createSemester({ name: 'Spring 2027', startDate: '2027-02-15', endDate: '2027-05-28' });
+    expect(svc.listSubjects(spring.id).filter((s) => s.personal)).toHaveLength(1);
+
+    const [task] = svc.createExercise({ subjectId: personal().id, title: 'Renew passport', description: '', plannedDates: ['2026-09-16'], deadlineDate: null });
+    expect(svc.getWeek(sem.id, '2026-09-14').exercises.map((e) => e.title)).toEqual(['Renew passport']);
+    expect(svc.getToday(sem.id, '2026-09-16').planned.map((e) => e.id)).toEqual([task.id]);
+    expect(svc.subjectOverview(sem.id).at(-1)).toMatchObject({ subject: { personal: true }, exerciseCount: 1 });
+    // A task can become an exercise of a subject and back.
+    svc.updateExercise({ id: task.id, scope: 'this', changes: { subjectId: zoo.id } });
+    svc.updateExercise({ id: task.id, scope: 'this', changes: { subjectId: personal().id } });
+    expect(svc.getExercise(task.id).subjectId).toBe(personal().id);
+    // It can be renamed and recoloured.
+    svc.updateSubject(personal().id, { semesterId: sem.id, name: 'Life', color: '#123456' });
+    expect(personal()).toMatchObject({ name: 'Life', color: '#123456' });
+  });
+
+  it("can't be deleted and has no lectures or exams", () => {
+    const p = personal();
+    expect(() => svc.deleteSubject(p.id)).toThrow(/can't be deleted/);
+    expect(() => svc.createLecture({ subjectId: p.id, title: 'X', weekday: 1, startTime: '10:00', endTime: '12:00' })).toThrow(/can't have lectures/);
+    const l = svc.createLecture({ subjectId: math.id, title: 'X', weekday: 1, startTime: '10:00', endTime: '12:00' });
+    expect(() => svc.updateLecture(l.id, { subjectId: p.id, title: 'X', weekday: 1, startTime: '10:00', endTime: '12:00' })).toThrow(/can't have lectures/);
+    const exam = { kind: 'midterm' as const, title: '', date: '2026-11-04', startTime: null, endTime: null, location: '', notes: '' };
+    expect(() => svc.createExam({ subjectId: p.id, ...exam })).toThrow(/can't have exams/);
+    // It goes to the trash with its semester and comes back with it.
+    svc.createExercise({ subjectId: p.id, title: 'Laundry', description: '', plannedDates: ['2026-09-16'], deadlineDate: null });
+    const del = svc.deleteSemester(sem.id);
+    expect(svc.listTrash()[0].detail).toBe('1 subject with all lectures, exercises and tasks');
+    svc.restoreTrash(del.trashId);
+    expect(svc.getWeek(sem.id, '2026-09-14').exercises.map((e) => e.title)).toEqual(['Laundry']);
+  });
+});
+
+describe('schema v6', () => {
+  it('migrating a v5 database gives each session its exercise’s status (v7: except "in progress" with several sessions) and each semester a personal subject', async () => {
+    close();
+    const { migrations } = await import('../src/main/db/migrations');
+    const dir5 = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-v5-'));
+    const v5 = openDatabase(dir5, { migrations: migrations.slice(0, 5) });
+    const t = '2026-01-01T00:00:00.000Z';
+    v5.db.exec(`INSERT INTO semesters (id, name, start_date, end_date, created_at, updated_at) VALUES
+        (1, 'S', '2026-09-14', '2026-12-18', '${t}', '${t}');
+      INSERT INTO semesters (id, name, start_date, end_date, created_at, updated_at, deleted_at, trash_batch_id) VALUES
+        (2, 'Old', '2026-02-16', '2026-05-29', '${t}', '${t}', '${t}', 4);
+      INSERT INTO trash_batches (id, kind, label, detail, deleted_at) VALUES (4, 'semester', 'Old', '', '${t}');
+      INSERT INTO subjects (id, semester_id, name, color, created_at, updated_at) VALUES (1, 1, 'M', '#3366ff', '${t}', '${t}');
+      INSERT INTO exercises (id, subject_id, title, planned_date, deadline_date, status, handed_in, created_at, updated_at) VALUES
+        (7, 1, 'Done', '2026-09-16', '2026-09-18', 'completed', 1, '${t}', '${t}'),
+        (8, 1, 'Started', '2026-09-16', NULL, 'in_progress', 0, '${t}', '${t}'),
+        (9, 1, 'Fresh', '2026-09-16', '2026-09-20', 'not_started', 0, '${t}', '${t}');
+      INSERT INTO exercise_plan_dates (exercise_id, date) VALUES
+        (7, '2026-09-16'), (7, '2026-09-17'), (8, '2026-09-16'), (8, '2026-09-18'), (9, '2026-09-16');`);
+    v5.db.close();
+    const v6 = openDatabase(dir5);
+    close = () => {
+      v6.db.close();
+      fs.rmSync(dir5, { recursive: true, force: true });
+    };
+    expect(v6.schemaVersion).toBe(migrations.length);
+    expect(v6.backupsCreated).toHaveLength(1);
+    const s6 = new StudyService(v6.db);
+    expect(s6.getExercise(7)).toMatchObject({ status: 'completed', handedIn: true, sessions: [{ status: 'completed' }, { status: 'completed' }] });
+    // Started, but no planned day is known to be worked on yet.
+    expect(s6.getExercise(8)).toMatchObject({ status: 'in_progress', sessions: [{ status: 'not_started' }, { status: 'not_started' }] });
+    expect(s6.getExercise(9)).toMatchObject({ status: 'not_started', sessions: [{ status: 'not_started' }] });
+    expect(s6.listSubjects(1).map((s) => [s.name, s.personal])).toEqual([
+      ['M', false],
+      ['Personal', true],
+    ]);
+    // The trashed semester has one too, and gets it back on restore.
+    s6.restoreTrash(4);
+    expect(s6.listSubjects(2).map((s) => s.name)).toEqual(['Personal']);
+    const second = `INSERT INTO subjects (semester_id, name, color, personal, created_at, updated_at) VALUES (1, 'P2', '#000000', 1, '${t}', '${t}')`;
+    expect(() => v6.db.exec(second)).toThrow(/UNIQUE/);
   });
 });
