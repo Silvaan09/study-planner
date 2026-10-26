@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { api } from './api';
 import { useLoad, useUi } from './ui';
 import { formatDate, startOfWeek, todayISO, type ISODate } from '../shared/dates';
@@ -192,24 +192,27 @@ export function App() {
 
         <nav className="nav-section" aria-label="Subjects">
           <div className="sidebar-label">Subjects</div>
+          {/* Real subjects, then the personal tasks (listed last by the service). */}
           {subjects?.map((s) => {
             const active = focus?.id === s.id;
+            const what = s.personal ? `${s.name} tasks` : s.name;
             return (
-              <button
-                key={s.id}
-                className={`subject-item ${active ? 'active' : ''} ${focus && !active ? 'faded' : ''}`}
-                style={{ '--c': s.color } as CSSProperties}
-                aria-pressed={active}
-                title={active ? `Showing only ${s.name} — click to show all subjects` : `Show only ${s.name}`}
-                onClick={() => toggleFocus(s.id)}
-              >
-                <span className="dot" />
-                <span className="subject-name">{s.name}</span>
-                {active && <X size={13} />}
-              </button>
+              <Fragment key={s.id}>
+                {s.personal && subjects.every((x) => x.personal) && <p className="sidebar-empty">No subjects yet.</p>}
+                <button
+                  className={`subject-item ${s.personal ? 'personal' : ''} ${active ? 'active' : ''} ${focus && !active ? 'faded' : ''}`}
+                  style={{ '--c': s.color } as CSSProperties}
+                  aria-pressed={active}
+                  title={active ? `Showing only ${what} — click to show everything` : `Show only ${what}`}
+                  onClick={() => toggleFocus(s.id)}
+                >
+                  <span className="dot" />
+                  <span className="subject-name">{s.personal ? `${s.name} tasks` : s.name}</span>
+                  {active && <X size={13} />}
+                </button>
+              </Fragment>
             );
           })}
-          {subjects?.length === 0 && <p className="sidebar-empty">No subjects yet.</p>}
           {navItem('subjects', 'Manage subjects', <Sliders size={18} />)}
         </nav>
 

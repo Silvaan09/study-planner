@@ -7,13 +7,14 @@ export type CelebrationKind = 'lectures' | 'exercises' | 'everything';
 
 export function weekProgress(week: WeekData): WeekProgress {
   const weekEnd = addDays(week.weekStart, 6);
-  const planned = week.exercises.filter((e) => e.plannedDates.some((p) => p >= week.weekStart && p <= weekEnd));
+  // Each planned day is its own session with its own progress.
+  const sessions = week.exercises.flatMap((e) => e.sessions.filter((s) => s.date >= week.weekStart && s.date <= weekEnd));
   return {
     lectures: week.lectures.length,
     lecturesDone: week.lectures.filter((l) => l.completed).length,
-    exercises: planned.length,
-    exercisesDone: planned.filter((e) => e.status === 'completed').length,
-    exercisesInProgress: planned.filter((e) => e.status === 'in_progress').length,
+    exercises: sessions.length,
+    exercisesDone: sessions.filter((s) => s.status === 'completed').length,
+    exercisesInProgress: sessions.filter((s) => s.status === 'in_progress').length,
   };
 }
 
@@ -54,20 +55,20 @@ export function biggerCelebration(a: CelebrationKind | null, b: CelebrationKind 
   return RANK[b] > RANK[a] ? b : a;
 }
 
-/** Weeks whose exercise count includes this exercise (the weeks of its planned dates). */
+/** Weeks whose session counts include this exercise (the weeks of its planned dates). */
 export function exerciseWeeks(plannedDates: ISODate[]): ISODate[] {
   return [...new Set(plannedDates.map(startOfWeek))];
 }
 
-/** What was scheduled on one day (lecture occurrences + exercise planned dates) and how much of it is completed. */
+/** What was scheduled on one day (lecture occurrences + exercise sessions) and how much of it is completed. */
 export interface DayTally {
   total: number;
   done: number;
 }
 
 /**
- * Streak of days "on track": days on which every lecture was completed and every exercise planned that day is
- * completed. Days with nothing scheduled are skipped (they neither count nor break the streak). Today counts once
+ * Streak of days "on track": days on which every lecture was completed and every exercise session planned that day
+ * is completed. Days with nothing scheduled are skipped (they neither count nor break the streak). Today counts once
  * everything in it is done; while it is still open it doesn't break the streak.
  */
 export function computeStreak(days: ReadonlyMap<ISODate, DayTally>, from: ISODate, today: ISODate): Streak {

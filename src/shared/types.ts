@@ -25,6 +25,10 @@ export function exerciseStages(e: Pick<Exercise, 'deadlineDate'>): ExerciseStage
 export function exerciseSettled(e: Pick<Exercise, 'deadlineDate' | 'status' | 'handedIn'>): boolean {
   return e.deadlineDate ? e.handedIn : e.status === 'completed';
 }
+/** The work status of the session planned on `date` (the exercise's own status if it isn't planned that day). */
+export function sessionStatus(e: Pick<Exercise, 'sessions' | 'status'>, date: ISODate): ExerciseStatus {
+  return e.sessions.find((s) => s.date === date)?.status ?? e.status;
+}
 /** The last day before an unsettled exercise counts as overdue: its deadline, or without one its last planned day. */
 export function exerciseDueBy(e: Pick<Exercise, 'deadlineDate' | 'plannedDates'>): ISODate {
   return e.deadlineDate ?? e.plannedDates[e.plannedDates.length - 1];
@@ -45,6 +49,11 @@ export interface Subject {
   semesterId: Id;
   name: string;
   color: string;
+  /**
+   * The semester's built-in subject for personal tasks (exactly one per semester, listed last). Its exercises are
+   * "tasks"; it has no lectures or exams and can't be deleted.
+   */
+  personal: boolean;
 }
 
 /** A recurring weekly lecture definition. */
@@ -91,6 +100,12 @@ export interface ChecklistItemInput {
   done: boolean;
 }
 
+/** One day an exercise is planned to be worked on, with its own progress. */
+export interface ExerciseSession {
+  date: ISODate;
+  status: ExerciseStatus;
+}
+
 export interface Exercise {
   id: Id;
   subjectId: Id;
@@ -102,9 +117,14 @@ export interface Exercise {
   plannedDate: ISODate;
   /** Every day this exercise is planned to be worked on, sorted ascending (at least one). */
   plannedDates: ISODate[];
+  /** The planned days with their own progress, in the same order as plannedDates. */
+  sessions: ExerciseSession[];
   /** null = no deadline: nothing to hand in; overdue once the last planned day has passed (see exerciseDueBy). */
   deadlineDate: ISODate | null;
-  /** Progress of the work itself (the planned "To do" days). */
+  /**
+   * Progress of the work as a whole. Becomes done once every session is, or every step of its checklist; in progress
+   * once any session or step is started (and follows them when they are unticked). Can also be set by hand.
+   */
   status: ExerciseStatus;
   /** Handed in / dealt with by the deadline (the "Due" side). Implies status 'completed'; always false without a deadline. */
   handedIn: boolean;
@@ -149,7 +169,7 @@ export function examTitle(e: Pick<Exam, 'title' | 'kind'>): string {
 export interface WeekProgress {
   lectures: number;
   lecturesDone: number;
-  /** Exercises with at least one planned date in the week. */
+  /** Exercise sessions (planned days) in the week; an exercise planned on two days of it counts twice. */
   exercises: number;
   exercisesDone: number;
   exercisesInProgress: number;
@@ -298,7 +318,11 @@ export interface ExerciseChanges {
   plannedDates?: ISODate[];
   /** null removes the deadline (and clears handedIn). */
   deadlineDate?: ISODate | null;
-  /** Applies to this exercise only. A status other than 'completed' also clears handedIn. */
+  /**
+   * Applies to this exercise only: 'completed' / 'not_started' also set every session, 'in_progress' leaves the
+   * sessions as they are. A status other than 'completed' also clears handedIn. Without it, the status moves up to
+   * done when every session or every checklist step is.
+   */
   status?: ExerciseStatus;
   /** Applies to this exercise only. true also sets status 'completed'. */
   handedIn?: boolean;
@@ -370,15 +394,17 @@ export interface StudyApi {
   getSeries(id: Id): ExerciseSeries;
   createExercise(input: ExerciseCreateInput): Exercise[];
   updateExercise(input: ExerciseUpdateInput): ExerciseUpdateResult;
-  /** Work status. Anything but 'completed' also clears handedIn. */
+  /** Work status of the whole exercise (see ExerciseChanges.status). Anything but 'completed' also clears handedIn. */
   setExerciseStatus(id: Id, status: ExerciseStatus): void;
+  /** Progress of one session (planned day); the exercise's status follows (done once every session is). Returns the updated exercise. */
+  setSessionStatus(id: Id, date: ISODate, status: ExerciseStatus): Exercise;
   /** Handing in also marks the work completed; taking it back leaves the status as it is. */
   setExerciseHandedIn(id: Id, handedIn: boolean): void;
   /** Quick reschedule (drag & drop) of one planned date. Always applies to this occurrence only. Deadlines move via updateExercise (scope 'this'). */
   moveExercise(id: Id, fromDate: ISODate, toDate: ISODate): Exercise;
   deleteExercise(id: Id, scope: Scope): DeleteResult;
   extendSeries(seriesId: Id, count: number): Exercise[];
-  /** Ticks one checklist step; ticking a step of a not-started exercise marks it in progress. */
+  /** Ticks one checklist step; the exercise's status follows (in progress once a step is, done once every step is). */
   setChecklistItemDone(itemId: Id, done: boolean): Exercise;
 
   getExam(id: Id): Exam;

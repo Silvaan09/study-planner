@@ -83,7 +83,7 @@ export function OutstandingView({
       <header className="view-header">
         <div className="week-title">
           <h1>Outstanding</h1>
-          <div className="week-sub">Lectures not completed and exercises not handed in yet in {semester.name}, oldest first</div>
+          <div className="week-sub">Scheduled lectures and unfinished exercises</div>
         </div>
         <span className="spacer" />
         <FocusPill subject={focus} onClear={clearFocus} />
@@ -97,7 +97,7 @@ export function OutstandingView({
             <span>overdue exercise{counts.overdue === 1 ? '' : 's'}</span>
           </div>
         </div>
-        <div className="stat" title="Exercises not handed in yet that are planned for today or earlier, or due within the next 7 days">
+        <div className="stat" title="Exercises and tasks not finished yet that are planned for today or earlier, or due within the next 7 days">
           <StatusIcon status="in_progress" size={18} />
           <div>
             <strong>{counts.exercises}</strong>
@@ -152,6 +152,7 @@ export function OutstandingView({
               const s = subjectById.get(e.subjectId);
               const late = diffDays(exerciseDueBy(e), today);
               const left = -late;
+              const sessionsDone = e.sessions.filter((x) => x.status === 'completed').length;
               return (
                 <div key={`e${e.id}`} className={`out-item ${item.overdue ? 'overdue' : ''}`} style={{ '--c': s?.color } as CSSProperties}>
                   <select
@@ -171,7 +172,7 @@ export function OutstandingView({
                     onClick={() => ui.dialog((close) => <ExerciseDialog semester={semester} subjects={subjects} exerciseId={e.id} close={close} />)}
                   >
                     <div className="out-title">
-                      <span className="kind-tag">Exercise</span> {e.title}
+                      <span className="kind-tag">{s?.personal ? 'Task' : 'Exercise'}</span> {e.title}
                     </div>
                     <div className="out-meta">
                       <span className="subject-dot" /> {s?.name} · planned{' '}
@@ -180,6 +181,7 @@ export function OutstandingView({
                         .map((d) => formatDate(d, { weekday: true }))
                         .join(', ')}
                       {e.plannedDates.length > 3 && ` +${e.plannedDates.length - 3} more`}
+                      {e.plannedDates.length > 1 && sessionsDone > 0 && ` (${sessionsDone} of ${e.plannedDates.length} sessions done)`}
                       {e.deadlineDate ? (
                         <>
                           {' · '}
