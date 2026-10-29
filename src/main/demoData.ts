@@ -15,8 +15,8 @@ const SUBJECTS = {
 } as const;
 type SubjectKey = keyof typeof SUBJECTS;
 
-// [subject, title, weekday (1 = Mon), start, end]
-const LECTURES: [SubjectKey, string, number, string, string][] = [
+// [subject, title, weekday (1 = Mon), start, end, first / last lecture (default: the semester's)]
+const LECTURES: [SubjectKey, string, number, string, string, ISODate?, ISODate?][] = [
   ['math', 'Linear Algebra', 1, '10:15', '12:00'],
   ['chemistry', 'General Chemistry', 1, '14:15', '16:00'],
   ['physics', 'Mechanics', 2, '10:15', '12:00'],
@@ -29,7 +29,11 @@ const LECTURES: [SubjectKey, string, number, string, string][] = [
   ['cs', 'Programming Tutorial', 4, '13:15', '14:45'],
   ['chemistry', 'Chemistry Exercise Class', 5, '10:15', '12:00'],
   ['physics', 'Physics Lab', 5, '13:15', '17:00'],
+  ['math', 'Exam Revision', 5, '08:15', '10:00', '2026-11-20', '2026-12-18'],
 ];
+
+/** No lectures on these days. */
+const BREAKS = [{ name: 'Autumn break', startDate: '2026-10-26', endDate: '2026-10-30' }];
 
 interface DemoExercise {
   /** 'personal' = a personal task (the semester's built-in subject). */
@@ -115,6 +119,7 @@ export interface DemoSummary {
   exercises: number;
   tasks: number;
   exams: number;
+  breaks: number;
 }
 
 /** Fills an empty database with the demo semester. Runs in one transaction. */
@@ -127,11 +132,15 @@ export function seedDemo(svc: StudyService, today: ISODate): DemoSummary {
     }
     subjectIds.personal = svc.listSubjects(sem.id).find((s) => s.personal)!.id;
 
-    for (const [subject, title, weekday, startTime, endTime] of LECTURES) {
-      const lecture = svc.createLecture({ subjectId: subjectIds[subject], title, weekday, startTime, endTime });
+    for (const b of BREAKS) svc.createBreak({ semesterId: sem.id, ...b });
+    const onBreak = (d: ISODate) => BREAKS.some((b) => b.startDate <= d && d <= b.endDate);
+
+    for (const [subject, title, weekday, startTime, endTime, startDate, endDate] of LECTURES) {
+      const lecture = svc.createLecture({ subjectId: subjectIds[subject], title, weekday, startTime, endTime, startDate, endDate });
       for (const week of weeksBetween(sem.startDate, sem.endDate)) {
         const date = dateInWeek(week, weekday);
-        if (date >= sem.startDate && date < today && !MISSED_LECTURES.has(`${title}|${date}`)) {
+        const held = date >= (startDate ?? sem.startDate) && date <= (endDate ?? sem.endDate) && !onBreak(date);
+        if (held && date < today && !MISSED_LECTURES.has(`${title}|${date}`)) {
           svc.setLectureCompleted(lecture.id, week, true);
         }
       }
@@ -182,6 +191,7 @@ export function seedDemo(svc: StudyService, today: ISODate): DemoSummary {
       exercises: exercises.filter((e) => e.subjectId !== subjectIds.personal).length,
       tasks: exercises.filter((e) => e.subjectId === subjectIds.personal).length,
       exams: EXAMS.length,
+      breaks: BREAKS.length,
     };
   });
 }

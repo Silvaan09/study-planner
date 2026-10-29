@@ -2,19 +2,45 @@ import { useState } from 'react';
 import { api } from '../api';
 import { useLoad, useUi } from '../ui';
 import { playDing, setSoundEnabled, soundEnabled } from '../sound';
-import { Database, Folder, Volume, VolumeOff } from '../components/Icons';
+import { useUpdateStatus } from '../updates';
+import { Database, Download, Folder, Volume, VolumeOff } from '../components/Icons';
+import type { UpdateStatus } from '../../shared/types';
+
+function updateText(s: UpdateStatus | null, version: string | undefined): string {
+  switch (s?.state) {
+    case undefined:
+    case 'idle':
+      return `You have version ${version ?? '…'}.`;
+    case 'disabled':
+      return 'Updates are only checked in the installed app, not in development builds.';
+    case 'checking':
+      return 'Looking for a new version…';
+    case 'up-to-date': {
+      const at = new Date(s.checkedAt);
+      const time = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+      return `Version ${version ?? ''} is the latest (checked at ${time}).`;
+    }
+    case 'downloading':
+      return `Downloading version ${s.version}… ${s.percent}%`;
+    case 'ready':
+      return `Version ${s.version} is ready. It installs when you close the app, or restart now.`;
+    case 'error':
+      return `Couldn't check for updates: ${s.message}`;
+  }
+}
 
 export function SettingsView() {
   const ui = useUi();
   const { data: info } = useLoad(() => api.appInfo(), []);
   const [sound, setSound] = useState(soundEnabled);
+  const update = useUpdateStatus();
 
   return (
     <div className="page">
       <header className="view-header">
         <div className="week-title">
           <h1>Settings</h1>
-          <div className="week-sub">Sounds, and where your study data is stored</div>
+          <div className="week-sub">Sounds, updates, and where your study data is stored</div>
         </div>
       </header>
 
@@ -38,6 +64,40 @@ export function SettingsView() {
               }}
             />
           </label>
+        </section>
+
+        <section className="info-card">
+          <h2 className="card-title">Updates</h2>
+          <div className="setting-row">
+            <span className="setting-icon">
+              <Download size={18} />
+            </span>
+            <span className="setting-text">
+              <strong>Automatic updates</strong>
+              <small>{updateText(update, info?.version)}</small>
+              {update?.state === 'downloading' && (
+                <span className="update-bar" aria-hidden>
+                  <span style={{ width: `${update.percent}%` }} />
+                </span>
+              )}
+            </span>
+            {update?.state === 'ready' ? (
+              <button className="btn btn-primary" onClick={() => api.installUpdate()}>
+                Restart &amp; update
+              </button>
+            ) : (
+              <button
+                className="btn"
+                disabled={!update || ['disabled', 'checking', 'downloading'].includes(update.state)}
+                onClick={() => api.checkForUpdates()}
+              >
+                Check for updates
+              </button>
+            )}
+          </div>
+          <p className="muted small">
+            New versions are downloaded from GitHub in the background and installed when you close the app. Your data is kept.
+          </p>
         </section>
 
         {info && (

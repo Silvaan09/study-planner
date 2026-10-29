@@ -12,6 +12,7 @@ const KIND_LABEL: Record<TrashKind, string> = {
   exercise_occurrences: 'Exercises',
   exercise_series: 'Exercise series',
   exam: 'Exam',
+  break: 'Break',
 };
 
 function when(iso: string): string {

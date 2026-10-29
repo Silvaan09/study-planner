@@ -1,20 +1,33 @@
-import { Fragment, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { api } from './api';
 import { useLoad, useUi } from './ui';
 import { formatDate, startOfWeek, todayISO, type ISODate } from '../shared/dates';
 import type { Id, Semester } from '../shared/types';
-import { SemesterDialog } from './dialogs';
+import { BreaksDialog, ExamDialog, ExerciseDialog, LectureDialog, SemesterDialog } from './dialogs';
 import { TodayView } from './views/TodayView';
 import { TimetableView } from './views/TimetableView';
 import { OutstandingView } from './views/OutstandingView';
 import { SubjectsView } from './views/SubjectsView';
 import { TrashView } from './views/TrashView';
 import { SettingsView } from './views/SettingsView';
-import { Calendar, ListTodo, Pencil, Plus, Settings, Sliders, Sun, Trash, X } from './components/Icons';
+import { SearchPalette, targetWeek, type SearchPick, type SearchView } from './components/SearchPalette';
+import { useUpdateStatus } from './updates';
+import { Calendar, Download, ListTodo, Palm, Pencil, Plus, Search, Settings, Sliders, Sun, Trash, X } from './components/Icons';
 import logo from './logo.svg';
 
 const VIEWS = ['today', 'timetable', 'outstanding', 'subjects', 'trash', 'settings'] as const;
 type View = (typeof VIEWS)[number];
+
+/** The views (and the breaks dialog) as search results. */
+const SEARCH_VIEWS: SearchView[] = [
+  { id: 'today', label: 'Today', icon: <Sun size={15} />, keywords: ['streak', 'schedule'] },
+  { id: 'timetable', label: 'Timetable', icon: <Calendar size={15} />, keywords: ['week', 'calendar'] },
+  { id: 'outstanding', label: 'Outstanding', icon: <ListTodo size={15} />, keywords: ['overdue', 'missed', 'open'] },
+  { id: 'subjects', label: 'Manage subjects', icon: <Sliders size={15} />, keywords: ['lectures', 'exams', 'series'] },
+  { id: 'breaks', label: 'Breaks & holidays', icon: <Palm size={15} />, keywords: ['vacation', 'semester'] },
+  { id: 'trash', label: 'Trash', icon: <Trash size={15} />, keywords: ['deleted', 'restore'] },
+  { id: 'settings', label: 'Settings', icon: <Settings size={15} />, keywords: ['sound', 'updates', 'backup', 'data'] },
+];
 
 /** The remembered view; "data" (the Data & backups view before 1.4.0) is now part of Settings. */
 function rememberedView(): View {
@@ -90,6 +103,61 @@ export function App() {
   // Drop the focus if that subject disappears (deleted, or moved to the trash).
   const focus = subjects?.find((s) => s.id === focusId) ?? null;
 
+  const update = useUpdateStatus();
+
+  /** Opens what a search result points at (Shift: its week in the timetable). */
+  const openPick = useCallback(
+    ({ target: t, alt }: SearchPick) => {
+      if (!semester) return;
+      const list = subjects ?? [];
+      const week = alt ? targetWeek(t, semester, todayISO()) : null;
+      if (week) {
+        setWeekStart(week);
+        setView('timetable');
+        return;
+      }
+      switch (t.kind) {
+        case 'view':
+          if (t.id === 'breaks') ui.dialog((close) => <BreaksDialog semester={semester} close={close} />);
+          else setView(t.id as View);
+          break;
+        case 'subject':
+          setFocusId(t.subject.id);
+          if (view === 'trash' || view === 'settings') setView('timetable');
+          break;
+        case 'lecture':
+          ui.dialog((close) => <LectureDialog semester={semester} subjects={list} lectureId={t.lecture.id} close={close} />);
+          break;
+        case 'exercise':
+          ui.dialog((close) => <ExerciseDialog semester={semester} subjects={list} exerciseId={t.exercise.id} close={close} />);
+          break;
+        case 'exam':
+          ui.dialog((close) => <ExamDialog semester={semester} subjects={list} examId={t.exam.id} close={close} />);
+          break;
+        case 'break':
+          ui.dialog((close) => <BreaksDialog semester={semester} editId={t.brk.id} close={close} />);
+          break;
+      }
+    },
+    [semester, subjects, ui, view],
+  );
+  const openSearch = useCallback(async () => {
+    // Not on top of an open dialog.
+    if (!semester || document.querySelector('.modal')) return;
+    const pick = await ui.dialog<SearchPick>((close) => <SearchPalette semester={semester} views={SEARCH_VIEWS} close={close} />);
+    if (pick) openPick(pick);
+  }, [semester, ui, openPick]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key.toLowerCase() === 'k' || e.key.toLowerCase() === 'f')) {
+        e.preventDefault();
+        void openSearch();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openSearch]);
+
   const newSemester = async () => {
     const s = await ui.dialog<Semester>((close) => <SemesterDialog close={close} />);
     if (s) {
@@ -144,6 +212,12 @@ export function App() {
           <span>Study Planner</span>
         </div>
 
+        <button className="search-btn" onClick={() => void openSearch()} title="Search (Ctrl+F)">
+          <Search size={15} />
+          <span>Search</span>
+          <kbd>Ctrl F</kbd>
+        </button>
+
         <div className="semester-picker">
           <div className="semester-head">
             <label className="sidebar-label" htmlFor="semester-select">
@@ -195,7 +269,7 @@ export function App() {
           {/* Real subjects, then the personal tasks (listed last by the service). */}
           {subjects?.map((s) => {
             const active = focus?.id === s.id;
-            const what = s.personal ? `${s.name} tasks` : s.name;
+            const what = s.name;
             return (
               <Fragment key={s.id}>
                 {s.personal && subjects.every((x) => x.personal) && <p className="sidebar-empty">No subjects yet.</p>}
@@ -207,7 +281,7 @@ export function App() {
                   onClick={() => toggleFocus(s.id)}
                 >
                   <span className="dot" />
-                  <span className="subject-name">{s.personal ? `${s.name} tasks` : s.name}</span>
+                  <span className="subject-name">{s.name}</span>
                   {active && <X size={13} />}
                 </button>
               </Fragment>
@@ -217,6 +291,13 @@ export function App() {
         </nav>
 
         <nav className="nav-section sidebar-foot" aria-label="More">
+          {update?.state === 'ready' && (
+            <button className="nav-item update-ready" onClick={() => api.installUpdate()} title="Restarts the app and installs the update. Otherwise it installs when you close the app.">
+              <Download size={18} />
+              <span>Restart to update</span>
+              <span className="nav-badge">{update.version}</span>
+            </button>
+          )}
           {navItem('trash', 'Trash', <Trash size={18} />, trashCount ? <span className="nav-badge muted">{trashCount}</span> : null)}
           {navItem('settings', 'Settings', <Settings size={18} />)}
         </nav>

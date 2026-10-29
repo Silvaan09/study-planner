@@ -105,6 +105,7 @@ export function WeekPicker({ semester, weekStart, onChange }: { semester: Semest
               >
                 <span>
                   Week {i + 1} · {formatDate(w)}
+                  {p && p.breaks.length > 0 && <span className="week-break"> · {p.breaks.join(', ')}</span>}
                 </span>
                 <span className={`week-status ${status ? `status-${status}` : ''}`}>{status && <StatusIcon status={status} size={14} />}</span>
               </div>

@@ -1,8 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, screen, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { backupTo, NewerDatabaseError, openDatabase, type OpenedDatabase } from './db/database';
 import { StudyService, UserError } from './service';
+import { parseWindowState, type WindowState } from './windowState';
+import { checkForUpdates, getUpdateStatus, initUpdater, installUpdate } from './updater';
 import type { ApiMethod, ApiResponse, AppInfo } from '../shared/types';
 
 const APP_FOLDER = 'StudyPlanner';
@@ -49,6 +51,9 @@ const appMethods: Partial<Record<ApiMethod, (...args: any[]) => unknown>> = {
   appInfo,
   createBackup: () => backupTo(opened!.db, opened!.backupDir, 'manual'),
   openDataFolder: () => void shell.openPath(dataDir),
+  getUpdateStatus,
+  checkForUpdates,
+  installUpdate,
 };
 
 // Service methods callable from the UI. Anything not listed here is rejected.
@@ -58,6 +63,7 @@ const serviceMethods: ApiMethod[] = [
   'createLecture', 'updateLecture', 'getLecture', 'deleteLecture', 'setLectureCompleted',
   'getExercise', 'getSeries', 'createExercise', 'updateExercise', 'setExerciseStatus', 'setExerciseHandedIn', 'setSessionStatus', 'moveExercise',
   'deleteExercise', 'extendSeries', 'setChecklistItemDone',
+  'listBreaks', 'createBreak', 'updateBreak', 'deleteBreak',
   'getExam', 'createExam', 'updateExam', 'deleteExam',
   'getWeek', 'getOutstanding', 'getSemesterProgress', 'getToday',
   'listTrash', 'restoreTrash', 'purgeTrash', 'emptyTrash',
@@ -79,12 +85,34 @@ function registerIpc(): void {
   });
 }
 
+const MIN_WINDOW = { width: 960, height: 640 };
+const windowStateFile = () => path.join(app.getPath('userData'), 'window-state.json');
+
+function loadWindowState(): WindowState {
+  let json: string | null = null;
+  try {
+    json = fs.readFileSync(windowStateFile(), 'utf8');
+  } catch {
+    // No saved state yet: start maximized.
+  }
+  return parseWindowState(json, screen.getAllDisplays().map((d) => d.workArea), MIN_WINDOW);
+}
+
+function saveWindowState(state: WindowState): void {
+  try {
+    fs.mkdirSync(path.dirname(windowStateFile()), { recursive: true });
+    fs.writeFileSync(windowStateFile(), JSON.stringify(state));
+  } catch (err) {
+    console.error('[window] could not save the window state:', err);
+  }
+}
+
 function createWindow(): void {
+  const saved = loadWindowState();
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 960,
-    minHeight: 640,
+    ...(saved.bounds ?? { width: 1400, height: 900 }),
+    minWidth: MIN_WINDOW.width,
+    minHeight: MIN_WINDOW.height,
     show: false,
     title: 'Study Planner',
     icon: iconPath(),
@@ -97,7 +125,28 @@ function createWindow(): void {
       sandbox: true,
     },
   });
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
+  // Tracked through events: a minimized window doesn't report whether it was maximized before.
+  const state: WindowState = { ...saved };
+  // getNormalBounds = the size the window returns to when un-maximized/restored.
+  const rememberBounds = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) state.bounds = mainWindow.getNormalBounds();
+  };
+  mainWindow.on('maximize', () => (state.maximized = true));
+  mainWindow.on('unmaximize', () => (state.maximized = false));
+  mainWindow.on('enter-full-screen', () => (state.fullScreen = true));
+  mainWindow.on('leave-full-screen', () => (state.fullScreen = false));
+  mainWindow.on('resize', rememberBounds);
+  mainWindow.on('move', rememberBounds);
+  mainWindow.on('close', rememberBounds);
+  // Saved on 'closed', which fires however the window goes away ('close' doesn't for window.close()).
+  mainWindow.on('closed', () => saveWindowState(state));
+  mainWindow.once('ready-to-show', () => {
+    if (!mainWindow) return;
+    if (!state.bounds) rememberBounds();
+    if (saved.fullScreen) mainWindow.setFullScreen(true);
+    else if (saved.maximized) mainWindow.maximize();
+    mainWindow.show();
+  });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   const devUrl = process.env.VITE_DEV_SERVER_URL;
@@ -149,6 +198,7 @@ if (!app.requestSingleInstanceLock()) {
     }
     registerIpc();
     createWindow();
+    initUpdater(() => mainWindow);
   });
 
   app.on('window-all-closed', () => app.quit());

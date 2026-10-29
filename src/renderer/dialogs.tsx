@@ -4,6 +4,7 @@ import {
   addDays,
   diffDays,
   formatDate,
+  formatDateRange,
   isValidISODate,
   isValidTime,
   startOfWeek,
@@ -13,6 +14,7 @@ import {
   type ISODate,
 } from '../shared/dates';
 import {
+  breakTitle,
   EXAM_KIND_LABEL,
   EXAM_KINDS,
   EXERCISE_STAGE_LABEL,
@@ -32,10 +34,11 @@ import {
   type OverrideConflict,
   type Scope,
   type Semester,
+  type SemesterBreak,
   type Subject,
 } from '../shared/types';
-import { Modal, useUi } from './ui';
-import { Check, Plus, Repeat, StatusIcon, Trash, X } from './components/Icons';
+import { Modal, useLoad, useUi } from './ui';
+import { Check, Palm, Pencil, Plus, Repeat, StatusIcon, Trash, X } from './components/Icons';
 import { DateField } from './components/DatePicker';
 import { useActions } from './actions';
 
@@ -132,6 +135,7 @@ export function SemesterDialog({ semester, close }: { semester?: Semester; close
   };
   const weeks = isValidISODate(start) && isValidISODate(end) && !error ? Math.ceil((diffDays(start, end) + 1) / 7) : null;
   const semesterRange = weeks ? { start, end } : undefined;
+  const { data: breaks } = useLoad(() => (semester ? api.listBreaks(semester.id) : Promise.resolve([])), [semester?.id]);
 
   return (
     <Modal
@@ -158,7 +162,169 @@ export function SemesterDialog({ semester, close }: { semester?: Semester; close
           <DateField value={end} onChange={setEnd} range={semesterRange} />
         </Field>
       </div>
-      {weeks && <p className="muted small">Spans {weeks} week{weeks === 1 ? '' : 's'}. Lectures repeat weekly within these dates.</p>}
+      {weeks && (
+        <p className="muted small">
+          Spans {weeks} week{weeks === 1 ? '' : 's'}. Lectures repeat weekly within these dates
+          {semester ? ', except during breaks.' : '. Breaks and holidays can be added once the semester exists (Edit semester).'}
+        </p>
+      )}
+      {semester && (
+        <div className="semester-breaks">
+          <span className="field-label">Breaks &amp; holidays</span>
+          <div className="break-chips">
+            {breaks?.map((b) => (
+              <span key={b.id} className="break-chip" title={`No lectures ${formatDateRange(b.startDate, b.endDate)}`}>
+                {breakTitle(b)} · {formatDateRange(b.startDate, b.endDate)}
+              </span>
+            ))}
+            {breaks?.length === 0 && <span className="muted small">None</span>}
+            <button className="btn btn-ghost small" onClick={() => ui.dialog((close) => <BreaksDialog semester={semester} close={close} />)}>
+              <Palm size={14} /> {breaks?.length ? 'Manage…' : 'Add…'}
+            </button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// ------------------------------------------------------------------ breaks
+
+/**
+ * Lists a semester's breaks and holidays and adds / edits / deletes them; every change is saved right away.
+ * `date` prefills a new break (timetable day header), `editId` opens one for editing.
+ */
+export function BreaksDialog({ semester, date, editId, close }: { semester: Semester; date?: ISODate; editId?: Id; close: () => void }) {
+  const ui = useUi();
+  const actions = useActions();
+  const { data: breaks } = useLoad(() => api.listBreaks(semester.id), [semester.id]);
+  const [editing, setEditing] = useState<Id | null>(null);
+  const [name, setName] = useState('');
+  const [from, setFrom] = useState<ISODate>(date ?? '');
+  const [to, setTo] = useState<ISODate>(date ?? '');
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  const edit = (b: SemesterBreak) => {
+    setEditing(b.id);
+    setName(b.name);
+    setFrom(b.startDate);
+    setTo(b.endDate);
+    nameRef.current?.focus();
+  };
+  const reset = () => {
+    setEditing(null);
+    setName('');
+    setFrom('');
+    setTo('');
+  };
+  const openedEdit = useRef(false);
+  useEffect(() => {
+    if (openedEdit.current || !breaks || editId === undefined) return;
+    openedEdit.current = true;
+    const b = breaks.find((x) => x.id === editId);
+    if (b) edit(b);
+  }, [breaks, editId]);
+
+  const datesSet = isValidISODate(from) && isValidISODate(to);
+  const error = !datesSet
+    ? null
+    : from > to
+      ? 'Must be on or after the first day'
+      : to < semester.startDate || from > semester.endDate
+        ? 'Outside the semester'
+        : null;
+  const valid = datesSet && !error;
+  const range = { start: semester.startDate, end: semester.endDate };
+
+  const save = async () => {
+    const input = { semesterId: semester.id, name, startDate: from, endDate: to };
+    const b = await ui.run(() => (editing !== null ? api.updateBreak(editing, input) : api.createBreak(input)));
+    if (!b) return;
+    const when = b.startDate === b.endDate ? 'that day' : formatDateRange(b.startDate, b.endDate);
+    ui.toast(`${breakTitle(b)} ${editing !== null ? 'saved' : 'added'}: no lectures ${when}`, { kind: 'success' });
+    reset();
+  };
+
+  return (
+    <Modal
+      title="Breaks & holidays"
+      onClose={close}
+      width={540}
+      footer={
+        <>
+          <span className="spacer" />
+          <button className="btn" onClick={close}>
+            Done
+          </button>
+        </>
+      }
+    >
+      <p className="muted small">
+        No lectures take place during a break or on a holiday. Exercises, tasks and exams stay where they are.
+      </p>
+      <div className="break-list">
+        {breaks?.length === 0 && <p className="muted small">No breaks or holidays in {semester.name} yet.</p>}
+        {breaks?.map((b) => (
+          <div key={b.id} className={`row-item break-row ${editing === b.id ? 'editing' : ''}`}>
+            <Palm size={15} />
+            <span className="row-title">{breakTitle(b)}</span>
+            <span className="break-dates">{formatDateRange(b.startDate, b.endDate)}</span>
+            <span className="break-days">
+              {diffDays(b.startDate, b.endDate) + 1} day{b.startDate === b.endDate ? '' : 's'}
+            </span>
+            <button className="icon-btn small" title="Edit" onClick={() => edit(b)}>
+              <Pencil size={13} />
+            </button>
+            <button
+              className="icon-btn small"
+              title="Delete"
+              onClick={async () => {
+                if ((await actions.deleteBreak(b)) && editing === b.id) reset();
+              }}
+            >
+              <Trash size={13} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="break-form">
+        <h3>{editing !== null ? 'Edit break' : 'Add a break or holiday'}</h3>
+        <Field label="Name">
+          <input ref={nameRef} className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Autumn break (optional)" />
+        </Field>
+        <div className="field-row">
+          <Field label="First day">
+            <DateField
+              value={from}
+              range={range}
+              onChange={(d) => {
+                setFrom(d);
+                if (!isValidISODate(to) || to < d) setTo(d);
+              }}
+            />
+          </Field>
+          <Field label="Last day" error={error}>
+            <DateField value={to} range={range} min={isValidISODate(from) ? from : undefined} onChange={setTo} />
+          </Field>
+        </div>
+        <div className="button-row">
+          <span className="spacer" />
+          {editing !== null && (
+            <button className="btn" onClick={reset}>
+              Cancel
+            </button>
+          )}
+          <button className="btn btn-primary" disabled={!valid} onClick={save}>
+            {editing !== null ? (
+              'Save break'
+            ) : (
+              <>
+                <Plus size={14} /> Add
+              </>
+            )}
+          </button>
+        </div>
+      </div>
     </Modal>
   );
 }
@@ -220,13 +386,22 @@ export function SubjectDialog({ semesterId, subject, close }: { semesterId: Id; 
 
 // ------------------------------------------------------------------ lecture
 
+/** How many times a lecture on `day` (1 = Monday) takes place between `from` and `to`. */
+function weekdayCount(from: ISODate, to: ISODate, day: number): number {
+  if (!isValidISODate(from) || !isValidISODate(to) || from > to) return 0;
+  const first = addDays(from, (day - weekday(from) + 7) % 7);
+  return first > to ? 0 : Math.floor(diffDays(first, to) / 7) + 1;
+}
+
 export function LectureDialog({
+  semester,
   subjects,
   lectureId,
   defaults,
   weekStart,
   close,
 }: {
+  semester: Semester;
   subjects: Subject[];
   lectureId?: Id;
   defaults?: Partial<Lecture>;
@@ -243,6 +418,11 @@ export function LectureDialog({
   const [day, setDay] = useState(defaults?.weekday ?? 1);
   const [start, setStart] = useState(defaults?.startTime ?? '10:00');
   const [end, setEnd] = useState(defaults?.endTime ?? '12:00');
+  // The days it takes place; the semester's start and end unless changed (stored as "the semester's", see save).
+  const clampToSemester = (d: ISODate | null | undefined, fallback: ISODate) =>
+    !d ? fallback : d < semester.startDate ? semester.startDate : d > semester.endDate ? semester.endDate : d;
+  const [from, setFrom] = useState(semester.startDate);
+  const [until, setUntil] = useState(semester.endDate);
 
   useEffect(() => {
     if (lectureId === undefined) return;
@@ -253,17 +433,35 @@ export function LectureDialog({
       setDay(l.weekday);
       setStart(l.startTime);
       setEnd(l.endTime);
+      setFrom(clampToSemester(l.startDate, semester.startDate));
+      setUntil(clampToSemester(l.endDate, semester.endDate));
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lectureId]);
 
   const timeError = !isValidTime(start) || !isValidTime(end) ? 'Use 24-hour HH:MM' : start >= end ? 'Must end after it starts' : null;
-  const valid = subjectId !== '' && title.trim() && !timeError;
+  const count = weekdayCount(from, until, day);
+  const wholeSemester = from === semester.startDate && until === semester.endDate;
+  const datesError =
+    from > until ? 'Must be on or after the first lecture' : count === 0 ? `No ${WEEKDAY_NAMES[day - 1]} in these dates` : null;
+  const valid = subjectId !== '' && title.trim() && !timeError && !datesError;
 
   const save = async () => {
-    const input = { subjectId: subjectId as Id, title, weekday: day, startTime: start, endTime: end };
+    const input = {
+      subjectId: subjectId as Id,
+      title,
+      weekday: day,
+      startTime: start,
+      endTime: end,
+      // The semester's own start / end are stored as "none", so the lecture follows later changes to the semester.
+      startDate: from === semester.startDate ? null : from,
+      endDate: until === semester.endDate ? null : until,
+    };
     const ok = await ui.run(() => (lectureId !== undefined ? api.updateLecture(lectureId, input) : api.createLecture(input)));
     if (ok) {
-      if (lectureId === undefined) ui.toast(`Lecture added every ${WEEKDAY_NAMES[day - 1]}`, { kind: 'success' });
+      if (lectureId === undefined) {
+        ui.toast(wholeSemester ? `Lecture added every ${WEEKDAY_NAMES[day - 1]}` : `Lecture added: ${count} × ${WEEKDAY_NAMES[day - 1]}`, { kind: 'success' });
+      }
       close(true);
     }
   };
@@ -325,8 +523,20 @@ export function LectureDialog({
           <TimeInput value={end} onChange={setEnd} />
         </Field>
       </div>
+      <div className="field-row">
+        <Field label="First lecture">
+          <DateField value={from} onChange={setFrom} min={semester.startDate} max={semester.endDate} range={{ start: semester.startDate, end: semester.endDate }} />
+        </Field>
+        <Field label="Last lecture" error={datesError}>
+          <DateField value={until} onChange={setUntil} min={semester.startDate} max={semester.endDate} range={{ start: semester.startDate, end: semester.endDate }} />
+        </Field>
+      </div>
       <p className="muted small">
-        <Repeat size={13} /> Repeats every week within the semester. Each week's completion is tracked separately.
+        <Repeat size={13} />{' '}
+        {wholeSemester
+          ? 'Repeats every week of the semester'
+          : `${count} time${count === 1 ? '' : 's'}, ${formatDateRange(from, until)}`}
+        , except during breaks. Each week's completion is tracked separately.
         {lectureId !== undefined && ' Changes apply to all weeks; completion states are kept.'}
       </p>
     </Modal>

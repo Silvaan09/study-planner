@@ -148,6 +148,10 @@ export function useNow(ms = 30_000): Date {
 
 // ------------------------------------------------------------------ modal shell
 
+/** Open modals, oldest first. */
+const openModals: number[] = [];
+let nextModalId = 1;
+
 export function Modal({
   title,
   onClose,
@@ -161,11 +165,19 @@ export function Modal({
   footer?: ReactNode;
   width?: number;
 }) {
+  // Esc closes only the topmost of stacked modals (e.g. a confirmation over an editor).
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const me = nextModalId++;
+    openModals.push(me);
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && openModals[openModals.length - 1] === me && closeRef.current();
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    return () => {
+      openModals.splice(openModals.indexOf(me), 1);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, []);
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ width }} role="dialog" aria-modal="true">

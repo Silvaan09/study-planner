@@ -7,6 +7,7 @@ import {
   addDays,
   diffDays,
   formatDate,
+  formatDateRange,
   formatWeekRange,
   isoWeekNumber,
   minutesToTime,
@@ -20,6 +21,8 @@ import {
 } from '../../shared/dates';
 import { weekProgress } from '../../shared/progress';
 import {
+  breakOn,
+  breakTitle,
   exerciseDueBy,
   EXERCISE_STAGE_LABEL,
   EXERCISE_STATUS_LABEL,
@@ -36,7 +39,7 @@ import {
   type Subject,
   type WeekData,
 } from '../../shared/types';
-import { ExamDialog, ExerciseDialog, LectureDialog } from '../dialogs';
+import { BreaksDialog, ExamDialog, ExerciseDialog, LectureDialog } from '../dialogs';
 import { ContextMenu, type MenuEntry, type MenuState } from '../components/ContextMenu';
 import { WeekPicker } from '../components/WeekPicker';
 import { FocusPill } from '../components/FocusPill';
@@ -45,7 +48,7 @@ import { ChecklistPopover, ChecklistProgress } from '../components/Checklist';
 import { examTime } from '../components/ExamRow';
 import { bestTopMinute } from '../timetableScroll';
 import { FLICK_SPEED, SWITCH_FRACTION, glideMs, landingWeek, swipeSpeed, swipeWindow, velocityAtRelease, withPending } from '../swipe';
-import { Calendar, Check, ChevronLeft, ChevronRight, Flag, GraduationCap, Info, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
+import { Calendar, Check, ChevronLeft, ChevronRight, Flag, GraduationCap, Info, Palm, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
 
 const HOUR_PX = 64;
 /** Width of the right-hand edge zone that switches to the next week while dragging. */
@@ -281,6 +284,7 @@ export function TimetableView({
   const newLecture = (weekday?: number, startMin?: number) =>
     ui.dialog((close) => (
       <LectureDialog
+        semester={semester}
         subjects={subjects}
         defaults={
           weekday
@@ -309,7 +313,7 @@ export function TimetableView({
         {
           label: 'Edit lecture…',
           icon: <Pencil size={14} />,
-          onSelect: () => ui.dialog((close) => <LectureDialog subjects={subjects} lectureId={o.lectureId} weekStart={o.weekStart} close={close} />),
+          onSelect: () => ui.dialog((close) => <LectureDialog semester={semester} subjects={subjects} lectureId={o.lectureId} weekStart={o.weekStart} close={close} />),
         },
         'separator',
         {
@@ -367,6 +371,29 @@ export function TimetableView({
       items: [
         { label: 'Edit exam…', icon: <Pencil size={14} />, onSelect: () => openExam(x.id) },
         { label: 'Delete…', icon: <Trash size={14} />, danger: true, onSelect: () => actions.deleteExam(x) },
+      ],
+    });
+  };
+
+  /** Right-click on a day header: add a break or holiday from that day, or edit / remove the one it is in. */
+  const dayMenu = (ev: React.MouseEvent, day: ISODate, week: WeekData | undefined) => {
+    ev.preventDefault();
+    const b = breakOn(week?.breaks ?? [], day);
+    const breaksDialog = (opts: { date?: ISODate; editId?: number }) =>
+      ui.dialog((close) => <BreaksDialog semester={semester} {...opts} close={close} />);
+    setMenu({
+      x: ev.clientX,
+      y: ev.clientY,
+      items: [
+        { heading: formatDate(day, { weekday: true }) },
+        ...(b
+          ? [
+              { label: `Edit "${breakTitle(b)}"…`, icon: <Pencil size={14} />, onSelect: () => breaksDialog({ editId: b.id }) },
+              { label: 'Remove break', icon: <Trash size={14} />, danger: true, onSelect: () => actions.deleteBreak(b) },
+            ]
+          : [{ label: 'Add a break or holiday…', icon: <Palm size={14} />, onSelect: () => breaksDialog({ date: day }) }]),
+        'separator' as const,
+        { label: 'All breaks & holidays…', icon: <Calendar size={14} />, onSelect: () => breaksDialog({}) },
       ],
     });
   };
@@ -682,11 +709,12 @@ export function TimetableView({
     });
   }, [shownWeek]);
 
-  const dayClass = (day: ISODate) =>
+  const dayClass = (day: ISODate, week: WeekData | undefined) =>
     [
       day === today && 'today',
       weekday(day) >= 6 && 'weekend',
       (day < semester.startDate || day > semester.endDate) && 'outside',
+      breakOn(week?.breaks ?? [], day) && 'break',
       dragging && (canDrop(day) ? 'drop-ok' : 'drop-no'),
       dragging && dropDay === day && 'drop-hover',
     ]
@@ -739,13 +767,25 @@ export function TimetableView({
             <div className="legend-key">
               <span className="key key-exam" /> Exam
             </div>
+            <div className="legend-key">
+              <span className="key key-break" /> Break or holiday (no lectures; right-click a day to add one)
+            </div>
           </div>
         </div>
         {L.days.map((d, i) => (
-          <div key={d} className={`tt-day-head ${dayClass(d)}`} {...dropProps(d)}>
+          <div key={d} className={`tt-day-head ${dayClass(d, L.week)}`} {...dropProps(d)} onContextMenu={(ev) => dayMenu(ev, d, L.week)}>
             <span className="dow">{WEEKDAY_SHORT[i]}</span>
             <span className="dom">{+d.slice(8)}</span>
             {d.slice(8) === '01' || i === 0 ? <span className="mon">{formatDate(d).split(' ')[1]}</span> : null}
+            {(() => {
+              const b = breakOn(L.week?.breaks ?? [], d);
+              return b ? (
+                <span className="day-break" title={`${breakTitle(b)} (${formatDateRange(b.startDate, b.endDate)}): no lectures`}>
+                  <Palm size={12} />
+                  <span>{breakTitle(b)}</span>
+                </span>
+              ) : null;
+            })()}
           </div>
         ))}
       </div>
@@ -758,7 +798,7 @@ export function TimetableView({
         {L.days.map((d) => {
           const list = (L.week?.exercises ?? []).filter((e) => e.plannedDates.includes(d));
           return (
-            <div key={d} className={`tt-cell ${dayClass(d)}`} {...dropProps(d)} onDoubleClick={() => newExercise(d)}>
+            <div key={d} className={`tt-cell ${dayClass(d, L.week)}`} {...dropProps(d)} onDoubleClick={() => newExercise(d)}>
               {list.map((e) => {
                 // This card is one session: its own progress, not the exercise's.
                 const status = sessionStatus(e, d);
@@ -849,7 +889,7 @@ export function TimetableView({
           const list = (L.week?.exercises ?? []).filter((e) => e.deadlineDate === d);
           const exams = (L.week?.exams ?? []).filter((x) => x.date === d);
           return (
-            <div key={d} className={`tt-cell ${dayClass(d)}`} {...dropProps(d)}>
+            <div key={d} className={`tt-cell ${dayClass(d, L.week)}`} {...dropProps(d)}>
               {exams.map((x) => {
                 const time = examTime(x);
                 return (
@@ -936,7 +976,7 @@ export function TimetableView({
           {L.days.map((d, i) => (
             <div
               key={d}
-              className={`tt-col ${dayClass(d)}`}
+              className={`tt-col ${dayClass(d, L.week)}`}
               {...dropProps(d)}
               onDoubleClick={(ev) => {
                 const y = ev.clientY - (ev.currentTarget as HTMLElement).getBoundingClientRect().top;
@@ -1021,6 +1061,7 @@ export function TimetableView({
           <h1>{formatWeekRange(shownWeek)}</h1>
           <div className="week-sub">
             {weekIndex >= 0 ? `Semester week ${weekIndex + 1} of ${semWeeks.length}` : 'Outside the semester'} · Calendar week {isoWeekNumber(shownWeek)}
+            {data && data.breaks.length > 0 && <span className="week-break"> · {data.breaks.map(breakTitle).join(', ')}</span>}
           </div>
         </div>
         <div className="week-jump">
