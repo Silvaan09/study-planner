@@ -1,7 +1,7 @@
 {
   "name": "study-planner",
   "productName": "Study Planner",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "Visual university study planner for Windows",
   "author": "Silvan Meier",
   "license": "MIT",
@@ -15,7 +15,8 @@
     "test": "vitest run",
     "icon": "node scripts/launch.mjs scripts/make-icon.cjs",
     "seed-demo": "node scripts/seed-demo.mjs",
-    "dist": "npm run typecheck && npm test && npm run build && electron-builder --win nsis && node scripts/clean-release.mjs"
+    "dist": "npm run typecheck && npm test && npm run build && electron-builder --win nsis --publish never && node scripts/clean-release.mjs",
+    "release": "node scripts/publish-release.mjs"
   },
   "build": {
     "appId": "ch.silvanmeier.studyplanner",
@@ -45,8 +46,17 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Study Planner",
-      "deleteAppDataOnUninstall": false
-    }
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Study-Planner-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Silvaan09",
+        "repo": "study-planner",
+        "releaseType": "release"
+      }
+    ]
   },
   "devDependencies": {
     "@types/node": "^24.19.0",
@@ -56,6 +66,7 @@
     "concurrently": "^10.0.5",
     "electron": "^44.4.5",
     "electron-builder": "^26.15.3",
+    "electron-updater": "^6.8.11",
     "esbuild": "^0.28.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

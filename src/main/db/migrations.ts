@@ -275,6 +275,33 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 8,
+    name: 'lecture date ranges, semester breaks',
+    up(db) {
+      // A lecture takes place on its weekday between start_date and end_date (NULL = the semester's start / end,
+      // so existing lectures keep running all semester and follow later changes to the semester's dates).
+      // Breaks and holidays: no lectures take place on their days; exercises, tasks and exams are not affected.
+      db.exec(`
+        ALTER TABLE lectures ADD COLUMN start_date TEXT;
+        ALTER TABLE lectures ADD COLUMN end_date TEXT;
+
+        CREATE TABLE semester_breaks (
+          id              INTEGER PRIMARY KEY,
+          semester_id     INTEGER NOT NULL REFERENCES semesters(id) ON DELETE CASCADE,
+          name            TEXT NOT NULL DEFAULT '',
+          start_date      TEXT NOT NULL,
+          end_date        TEXT NOT NULL,
+          created_at      TEXT NOT NULL,
+          updated_at      TEXT NOT NULL,
+          deleted_at      TEXT,
+          trash_batch_id  INTEGER,
+          CHECK (start_date <= end_date)
+        );
+        CREATE INDEX idx_breaks_semester ON semester_breaks(semester_id);
+      `);
+    },
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = migrations[migrations.length - 1].version;

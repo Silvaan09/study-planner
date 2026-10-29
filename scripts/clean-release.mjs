@@ -6,16 +6,17 @@ import path from 'node:path';
 const root = path.resolve(import.meta.dirname, '..');
 const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const releaseDir = path.join(root, 'release');
-const current = `Setup ${version}.exe`;
+const current = `Study-Planner-Setup-${version}.exe`;
 
-if (!fs.existsSync(path.join(releaseDir, `Study Planner ${current}`))) {
+if (!fs.existsSync(path.join(releaseDir, current))) {
   console.error(`clean-release: installer for ${version} not found — leaving release/ untouched.`);
   process.exit(1);
 }
 
 for (const name of fs.readdirSync(releaseDir)) {
-  const isInstaller = /Setup .+\.exe(\.blockmap)?$/.test(name);
-  if (isInstaller && !name.includes(current)) {
+  // Also matches the names used before 1.11.0 ("Study Planner Setup 1.10.0.exe").
+  const isInstaller = /Setup[ -].+\.exe(\.blockmap)?$/.test(name);
+  if (isInstaller && !name.startsWith(current)) {
     fs.rmSync(path.join(releaseDir, name), { force: true });
     console.log(`clean-release: removed old installer ${name}`);
   }

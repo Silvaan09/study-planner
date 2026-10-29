@@ -2,7 +2,7 @@ import { Fragment, useState, type CSSProperties } from 'react';
 import { api } from '../api';
 import { useLoad, useUi } from '../ui';
 import { useActions } from '../actions';
-import { WEEKDAY_SHORT, formatDate, todayISO } from '../../shared/dates';
+import { WEEKDAY_SHORT, formatDate, formatDateRange, todayISO } from '../../shared/dates';
 import { EXERCISE_STAGE_LABEL, exerciseDueBy, exerciseStage, type Exercise, type Id, type Semester, type Subject, type SubjectOverview } from '../../shared/types';
 import { ExamDialog, ExerciseDialog, LectureDialog, SubjectDialog } from '../dialogs';
 import { FocusPill } from '../components/FocusPill';
@@ -137,7 +137,7 @@ export function SubjectsView({ semester, focus, clearFocus }: { semester: Semest
               >
                 <header>
                   <span className="subject-swatch" />
-                  <h2>{subject.name} tasks</h2>
+                  <h2>{subject.name}</h2>
                   <span className="spacer" />
                   <button
                     className="icon-btn"
@@ -194,7 +194,12 @@ export function SubjectsView({ semester, focus, clearFocus }: { semester: Semest
                       {l.startTime}–{l.endTime}
                     </span>
                     <span className="row-title">{l.title}</span>
-                    <button className="icon-btn small" title="Edit" onClick={() => ui.dialog((close) => <LectureDialog subjects={subjects} lectureId={l.id} close={close} />)}>
+                    {(l.startDate || l.endDate) && (
+                      <span className="row-sub" title="Takes place only between these dates">
+                        {formatDateRange(l.startDate ?? semester.startDate, l.endDate ?? semester.endDate)}
+                      </span>
+                    )}
+                    <button className="icon-btn small" title="Edit" onClick={() => ui.dialog((close) => <LectureDialog semester={semester} subjects={subjects} lectureId={l.id} close={close} />)}>
                       <Pencil size={13} />
                     </button>
                     <button className="icon-btn small" title="Delete" onClick={() => actions.deleteLecture(l)}>
@@ -202,7 +207,7 @@ export function SubjectsView({ semester, focus, clearFocus }: { semester: Semest
                     </button>
                   </div>
                 ))}
-                <button className="btn btn-ghost small" onClick={() => ui.dialog((close) => <LectureDialog subjects={subjects} defaults={{ subjectId: subject.id }} close={close} />)}>
+                <button className="btn btn-ghost small" onClick={() => ui.dialog((close) => <LectureDialog semester={semester} subjects={subjects} defaults={{ subjectId: subject.id }} close={close} />)}>
                   <Plus size={13} /> Lecture
                 </button>
               </section>

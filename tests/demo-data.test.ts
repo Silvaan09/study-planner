@@ -37,6 +37,13 @@ describe('demo data (npm run seed-demo)', () => {
     // Nothing in the future is completed.
     expect(svc.getWeek(semesterId, '2026-10-05').lectures.some((l) => l.completed)).toBe(false);
 
+    // The autumn break (week 7) has no lectures, but its exercises stay; Exam Revision only runs in the last five weeks.
+    const breakWeek = svc.getWeek(semesterId, '2026-10-26');
+    expect([breakWeek.lectures.length, breakWeek.breaks.map((b) => b.name)]).toEqual([0, ['Autumn break']]);
+    expect(breakWeek.exercises.length).toBeGreaterThan(0);
+    const revision = (w: string) => svc.getWeek(semesterId, w).lectures.filter((l) => l.title === 'Exam Revision').length;
+    expect([revision('2026-11-09'), revision('2026-11-16'), revision('2026-12-14')]).toEqual([0, 1, 1]);
+
     const out = svc.getOutstanding(semesterId, today);
     const overdue = out.items.filter((i) => i.kind === 'exercise' && i.overdue).map((i) => (i.kind === 'exercise' ? i.exercise.title : ''));
     expect(overdue.sort()).toEqual(['Git Basics Quiz', 'Mechanics Problems 01', 'Reading: Periodic Table']);
@@ -76,6 +83,12 @@ describe('demo data (npm run seed-demo)', () => {
       ['Renew bike insurance', 'completed', true],
       ['Apply for student job', 'not_started', false],
     ]);
+  });
+
+  it('can be seeded late in the semester, across the break', () => {
+    const { semesterId } = seedDemo(svc, '2026-12-01');
+    expect(svc.getWeek(semesterId, '2026-11-23').lectures.every((l) => l.completed)).toBe(true);
+    expect(svc.getToday(semesterId, '2026-12-01').missedLectures.map((o) => o.title)).toEqual(['Analysis I', 'Programming Tutorial', 'Electromagnetism']);
   });
 
   it('leaves the sessions of a partly past exercise half done', () => {

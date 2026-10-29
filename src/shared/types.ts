@@ -64,6 +64,29 @@ export interface Lecture {
   weekday: number; // 1 = Monday ... 7 = Sunday
   startTime: string; // "HH:MM"
   endTime: string;
+  /** First / last day it can take place; null = the semester's start / end (and follows changes to them). */
+  startDate: ISODate | null;
+  endDate: ISODate | null;
+}
+
+/** A break or holiday of a semester: no lectures take place on its days (exercises, tasks and exams are unaffected). */
+export interface SemesterBreak {
+  id: Id;
+  semesterId: Id;
+  /** Optional; see breakTitle. */
+  name: string;
+  startDate: ISODate;
+  endDate: ISODate;
+}
+
+/** The break's name, or "Holiday" (one day) / "Break" when it has none. */
+export function breakTitle(b: Pick<SemesterBreak, 'name' | 'startDate' | 'endDate'>): string {
+  return b.name || (b.startDate === b.endDate ? 'Holiday' : 'Break');
+}
+
+/** The break covering `date`, if any. */
+export function breakOn(breaks: SemesterBreak[], date: ISODate): SemesterBreak | undefined {
+  return breaks.find((b) => b.startDate <= date && date <= b.endDate);
 }
 
 /** One concrete weekly occurrence of a lecture. */
@@ -177,6 +200,8 @@ export interface WeekProgress {
 
 export interface SemesterWeekProgress extends WeekProgress {
   weekStart: ISODate;
+  /** Titles of the breaks touching this week (see breakTitle). */
+  breaks: string[];
 }
 
 export interface WeekData {
@@ -188,6 +213,8 @@ export interface WeekData {
   series: ExerciseSeries[];
   /** Exams on a day of the week. */
   exams: Exam[];
+  /** Breaks overlapping the week (lectures don't take place on their days). */
+  breaks: SemesterBreak[];
 }
 
 export type OutstandingItem =
@@ -236,6 +263,8 @@ export interface TodayData {
   missedLectures: LectureOccurrence[];
   /** Exams from today on, by date. */
   exams: Exam[];
+  /** The break today falls in, if any. */
+  todayBreak: SemesterBreak | null;
   streak: Streak;
 }
 
@@ -247,7 +276,8 @@ export type TrashKind =
   | 'exercise'
   | 'exercise_occurrences'
   | 'exercise_series'
-  | 'exam';
+  | 'exam'
+  | 'break';
 
 export interface TrashEntry {
   id: Id;
@@ -287,6 +317,16 @@ export interface LectureInput {
   weekday: number;
   startTime: string;
   endTime: string;
+  /** Within the semester; null / omitted = from the semester's start / until its end. */
+  startDate?: ISODate | null;
+  endDate?: ISODate | null;
+}
+
+export interface BreakInput {
+  semesterId: Id;
+  name: string;
+  startDate: ISODate;
+  endDate: ISODate;
 }
 
 export interface ExerciseCreateInput {
@@ -363,6 +403,16 @@ export interface ExamInput {
   notes: string;
 }
 
+/** State of the auto-updater (GitHub releases), pushed to the renderer whenever it changes. */
+export type UpdateStatus =
+  | { state: 'disabled' } // development builds
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'up-to-date'; checkedAt: string }
+  | { state: 'downloading'; version: string; percent: number }
+  | { state: 'ready'; version: string }
+  | { state: 'error'; message: string };
+
 export interface DeleteResult {
   trashId: Id;
   label: string;
@@ -389,6 +439,12 @@ export interface StudyApi {
   /** weekStart identifies the occurrence for scopes 'this' and 'future'. */
   deleteLecture(id: Id, scope: Scope, weekStart: ISODate): DeleteResult;
   setLectureCompleted(lectureId: Id, weekStart: ISODate, completed: boolean): void;
+
+  /** Breaks of a semester, by start date. */
+  listBreaks(semesterId: Id): SemesterBreak[];
+  createBreak(input: BreakInput): SemesterBreak;
+  updateBreak(id: Id, input: BreakInput): SemesterBreak;
+  deleteBreak(id: Id): DeleteResult;
 
   getExercise(id: Id): Exercise;
   getSeries(id: Id): ExerciseSeries;
@@ -425,6 +481,12 @@ export interface StudyApi {
 
   createBackup(): string;
   openDataFolder(): void;
+
+  getUpdateStatus(): UpdateStatus;
+  /** Looks for a newer release on GitHub (downloaded in the background when there is one). */
+  checkForUpdates(): void;
+  /** Quits, installs the downloaded update and restarts. */
+  installUpdate(): void;
 }
 
 export type ApiMethod = keyof StudyApi;

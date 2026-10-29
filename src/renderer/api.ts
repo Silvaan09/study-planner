@@ -1,8 +1,11 @@
-import type { ApiResponse, StudyApi } from '../shared/types';
+import type { ApiResponse, StudyApi, UpdateStatus } from '../shared/types';
 
 declare global {
   interface Window {
-    studyApi: { call(method: string, args: unknown[]): Promise<ApiResponse<unknown>> };
+    studyApi: {
+      call(method: string, args: unknown[]): Promise<ApiResponse<unknown>>;
+      onUpdateStatus(listener: (status: UpdateStatus) => void): () => void;
+    };
   }
 }
 

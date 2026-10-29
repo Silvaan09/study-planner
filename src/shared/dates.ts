@@ -146,6 +146,14 @@ export function formatWeekRange(weekStart: ISODate): string {
   return `${formatDate(weekStart)} – ${formatDate(end)} ${b.getUTCFullYear()}`;
 }
 
+/** "Mon 19 Oct", "19 – 23 Oct", "28 Oct – 3 Nov", "21 Dec 2026 – 8 Jan 2027": a day range, years only across a new year. */
+export function formatDateRange(start: ISODate, end: ISODate): string {
+  if (start === end) return formatDate(start, { weekday: true });
+  if (start.slice(0, 4) !== end.slice(0, 4)) return `${formatDate(start, { year: true })} – ${formatDate(end, { year: true })}`;
+  if (start.slice(0, 7) === end.slice(0, 7)) return `${+start.slice(8)} – ${formatDate(end)}`;
+  return `${formatDate(start)} – ${formatDate(end)}`;
+}
+
 /** "Today", "Tomorrow", "in 12 days", "in 5 weeks, 2 days", "Yesterday", "3 days ago": how far `date` is from `today`. */
 export function formatCountdown(today: ISODate, date: ISODate): string {
   const n = diffDays(today, date);

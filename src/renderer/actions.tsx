@@ -1,7 +1,7 @@
 import { api } from './api';
 import { Confirm, ScopeChooser, useUi } from './ui';
 import { dateInWeek, formatDate, startOfWeek, type ISODate } from '../shared/dates';
-import { sessionStatus, type DeleteResult, type Exam, type Exercise, type ExerciseStage, type ExerciseStatus, type Id, type Lecture, type Semester, type Subject } from '../shared/types';
+import { sessionStatus, type DeleteResult, type Exam, type Exercise, type ExerciseStage, type ExerciseStatus, type Id, type Lecture, type Semester, type SemesterBreak, type Subject } from '../shared/types';
 import { biggerCelebration, celebrationFor, exerciseWeeks, weekProgress, type CelebrationKind } from '../shared/progress';
 import { playDing } from './sound';
 
@@ -207,6 +207,9 @@ export function useActions() {
 
     async deleteExam(e: Exam): Promise<boolean> {
       return moved(await ui.run(() => api.deleteExam(e.id)));
+    },
+    async deleteBreak(b: SemesterBreak): Promise<boolean> {
+      return moved(await ui.run(() => api.deleteBreak(b.id)));
     },
   };
 }

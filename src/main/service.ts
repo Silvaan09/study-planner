@@ -4,21 +4,26 @@ import {
   dateInWeek,
   diffDays,
   formatDate,
+  formatDateRange,
   isValidISODate,
   isValidTime,
   startOfWeek,
   weekday,
   weeksBetween,
+  WEEKDAY_NAMES,
   type ISODate,
 } from '../shared/dates';
 import { computeStreak, weekProgress, type DayTally } from '../shared/progress';
 import {
   EXAM_KINDS,
   EXERCISE_STATUSES,
+  breakOn,
+  breakTitle,
   examTitle,
   exerciseDueBy,
   exerciseSettled,
   sessionStatus,
+  type BreakInput,
   type ChecklistItem,
   type ChecklistItemInput,
   type DeleteResult,
@@ -42,6 +47,7 @@ import {
   type OverrideConflict,
   type Scope,
   type Semester,
+  type SemesterBreak,
   type SemesterInput,
   type Subject,
   type SubjectInput,
@@ -169,7 +175,7 @@ export function seriesTitle(base: string, n: number): string {
 }
 
 // Tables that hold trashable rows, in child-to-parent order.
-const TRASH_TABLES = ['exams', 'exercises', 'exercise_series', 'lecture_occurrences', 'lectures', 'subjects', 'semesters'] as const;
+const TRASH_TABLES = ['exams', 'exercises', 'exercise_series', 'lecture_occurrences', 'lectures', 'subjects', 'semester_breaks', 'semesters'] as const;
 type TrashTable = (typeof TRASH_TABLES)[number];
 
 // "Live" = not in the trash and no ancestor in the trash.
@@ -436,6 +442,8 @@ export class StudyService {
     weekday: r.weekday,
     startTime: r.start_time,
     endTime: r.end_time,
+    startDate: r.start_date ?? null,
+    endDate: r.end_date ?? null,
   });
 
   private liveLecture(id: Id): Lecture {
@@ -444,12 +452,34 @@ export class StudyService {
     return this.mapLecture(r);
   }
 
-  private lectureInput(input: LectureInput): LectureInput {
+  /** Validates a lecture; its dates must lie within the semester and include at least one of its weekdays. */
+  private lectureInput(input: LectureInput, sem: Semester): Required<LectureInput> {
     const title = this.text(input?.title, 'Lecture title');
     const wd = this.int(input.weekday, 'Day', 1, 7);
     if (!isValidTime(input.startTime) || !isValidTime(input.endTime)) throw new UserError('Please enter times as HH:MM (24-hour).');
     if (input.startTime >= input.endTime) throw new UserError('The lecture must end after it starts.');
-    return { subjectId: input.subjectId, title, weekday: wd, startTime: input.startTime, endTime: input.endTime };
+    const optional = (v: unknown, what: string) => (v === null || v === undefined || v === '' ? null : this.date(v, what));
+    const startDate = optional(input.startDate, 'First lecture');
+    const endDate = optional(input.endDate, 'Last lecture');
+    const v = { subjectId: input.subjectId, title, weekday: wd, startTime: input.startTime, endTime: input.endTime, startDate, endDate };
+    for (const d of [startDate, endDate]) {
+      if (d && (d < sem.startDate || d > sem.endDate)) {
+        throw new UserError(`The lecture's dates must be within the semester (${formatDate(sem.startDate, { year: true })} – ${formatDate(sem.endDate, { year: true })}).`);
+      }
+    }
+    const { from, to } = this.lectureRange(v, sem);
+    if (from > to) throw new UserError('The last lecture must be on or after the first one.');
+    const days = Array.from({ length: Math.min(7, diffDays(from, to) + 1) }, (_, i) => addDays(from, i));
+    if (!days.some((d) => weekday(d) === wd)) throw new UserError(`There is no ${WEEKDAY_NAMES[wd - 1]} between ${formatDateRange(from, to)}.`);
+    return v;
+  }
+
+  /** The days a lecture can take place: its own dates, else the semester's (never beyond the semester's). */
+  private lectureRange(l: Pick<Lecture, 'startDate' | 'endDate'>, sem: Semester): { from: ISODate; to: ISODate } {
+    return {
+      from: l.startDate && l.startDate > sem.startDate ? l.startDate : sem.startDate,
+      to: l.endDate && l.endDate < sem.endDate ? l.endDate : sem.endDate,
+    };
   }
 
   getLecture(id: Id): Lecture {
@@ -457,16 +487,19 @@ export class StudyService {
   }
 
   createLecture(input: LectureInput): Lecture {
-    const v = this.lectureInput(input);
-    this.courseSubject(v.subjectId, 'lectures');
+    const subject = this.courseSubject(input?.subjectId, 'lectures');
+    const v = this.lectureInput(input, this.liveSemester(subject.semesterId));
     const t = this.stamp();
     const r = this.run(
-      'INSERT INTO lectures (subject_id, title, weekday, start_time, end_time, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      `INSERT INTO lectures (subject_id, title, weekday, start_time, end_time, start_date, end_date, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       v.subjectId,
       v.title,
       v.weekday,
       v.startTime,
       v.endTime,
+      v.startDate,
+      v.endDate,
       t,
       t,
     );
@@ -475,18 +508,21 @@ export class StudyService {
 
   updateLecture(id: Id, input: LectureInput): Lecture {
     const existing = this.liveLecture(id);
-    const v = this.lectureInput(input);
-    const newSubject = this.courseSubject(v.subjectId, 'lectures');
+    const newSubject = this.courseSubject(input?.subjectId, 'lectures');
     if (newSubject.semesterId !== this.liveSubject(existing.subjectId).semesterId) {
       throw new UserError('A lecture can only be moved to a subject in the same semester.');
     }
+    const v = this.lectureInput(input, this.liveSemester(newSubject.semesterId));
     this.run(
-      'UPDATE lectures SET subject_id = ?, title = ?, weekday = ?, start_time = ?, end_time = ?, updated_at = ? WHERE id = ?',
+      `UPDATE lectures SET subject_id = ?, title = ?, weekday = ?, start_time = ?, end_time = ?, start_date = ?, end_date = ?, updated_at = ?
+       WHERE id = ?`,
       v.subjectId,
       v.title,
       v.weekday,
       v.startTime,
       v.endTime,
+      v.startDate,
+      v.endDate,
       this.stamp(),
       id,
     );
@@ -497,12 +533,16 @@ export class StudyService {
     return this.liveSemester(this.liveSubject(subjectId).semesterId);
   }
 
-  /** Mondays of weeks in which this lecture has an occurrence inside the semester. */
+  /** Whether the lecture takes place on `date`: its weekday, within its dates (and the semester's), not during a break. */
+  private takesPlace(lecture: Lecture, sem: Semester, breaks: SemesterBreak[], date: ISODate): boolean {
+    const { from, to } = this.lectureRange(lecture, sem);
+    return weekday(date) === lecture.weekday && date >= from && date <= to && !breakOn(breaks, date);
+  }
+
+  /** Mondays of weeks in which this lecture has an occurrence. */
   private lectureWeeks(lecture: Lecture, sem: Semester): ISODate[] {
-    return weeksBetween(sem.startDate, sem.endDate).filter((w) => {
-      const d = dateInWeek(w, lecture.weekday);
-      return d >= sem.startDate && d <= sem.endDate;
-    });
+    const breaks = this.listBreaks(sem.id);
+    return weeksBetween(sem.startDate, sem.endDate).filter((w) => this.takesPlace(lecture, sem, breaks, dateInWeek(w, lecture.weekday)));
   }
 
   setLectureCompleted(lectureId: Id, weekStart: ISODate, completed: boolean): void {
@@ -511,7 +551,9 @@ export class StudyService {
       const ws = this.monday(weekStart);
       const sem = this.semesterOfSubject(lecture.subjectId);
       const d = dateInWeek(ws, lecture.weekday);
-      if (d < sem.startDate || d > sem.endDate) throw new UserError('This lecture does not take place in that week.');
+      const off = breakOn(this.listBreaks(sem.id), d);
+      if (off) throw new UserError(`This lecture doesn't take place during ${breakTitle(off)}.`);
+      if (!this.takesPlace(lecture, sem, [], d)) throw new UserError('This lecture does not take place in that week.');
       const row = this.get<any>('SELECT * FROM lecture_occurrences WHERE lecture_id = ? AND week_start = ?', lectureId, ws);
       if (row && (row.deleted_at || row.removed)) throw new UserError('This lecture occurrence was deleted.');
       const at = completed ? this.stamp() : null;
@@ -554,7 +596,7 @@ export class StudyService {
     });
   }
 
-  /** Occurrences of live lectures of a semester, within the semester's date range. */
+  /** Occurrences of live lectures of a semester: within each lecture's dates (and the semester's), outside breaks. */
   private lectureOccurrences(sem: Semester, from: ISODate, to: ISODate): LectureOccurrence[] {
     const lectures = this.all<any>(
       `SELECT x.* FROM lectures x ${SUBJECT_JOIN} WHERE s.semester_id = ? AND x.deleted_at IS NULL AND ${LIVE_SUBJECT}`,
@@ -564,6 +606,7 @@ export class StudyService {
     const lo = from > sem.startDate ? from : sem.startDate;
     const hi = to < sem.endDate ? to : sem.endDate;
     if (lo > hi) return [];
+    const breaks = this.breaksBetween(sem.id, lo, hi);
     const states = new Map<string, any>();
     for (const r of this.all<any>(
       `SELECT o.* FROM lecture_occurrences o JOIN lectures x ON x.id = o.lecture_id ${SUBJECT_JOIN}
@@ -578,7 +621,7 @@ export class StudyService {
     for (const w of weeksBetween(lo, hi)) {
       for (const l of lectures) {
         const date = dateInWeek(w, l.weekday);
-        if (date < lo || date > hi) continue;
+        if (date < lo || date > hi || !this.takesPlace(l, sem, breaks, date)) continue;
         const st = states.get(`${l.id}|${w}`);
         if (st && (st.deleted_at || st.removed)) continue;
         result.push({
@@ -594,6 +637,85 @@ export class StudyService {
       }
     }
     return result;
+  }
+
+  // ----------------------------------------------------------------- breaks
+
+  private mapBreak = (r: any): SemesterBreak => ({
+    id: r.id,
+    semesterId: r.semester_id,
+    name: r.name,
+    startDate: r.start_date,
+    endDate: r.end_date,
+  });
+
+  private liveBreak(id: Id): SemesterBreak {
+    const r = this.get(
+      `SELECT x.* FROM semester_breaks x JOIN semesters sem ON sem.id = x.semester_id
+       WHERE x.id = ? AND x.deleted_at IS NULL AND sem.deleted_at IS NULL`,
+      id,
+    );
+    if (!r) throw new UserError('This break no longer exists.');
+    return this.mapBreak(r);
+  }
+
+  /** A break must overlap its semester (it may run on past its end, e.g. over Christmas). */
+  private breakInput(input: BreakInput, sem: Semester): BreakInput {
+    const name = this.text(input?.name ?? '', 'Name', { allowEmpty: true });
+    const startDate = this.date(input.startDate, 'First day');
+    const endDate = this.date(input.endDate, 'Last day');
+    if (startDate > endDate) throw new UserError('The last day must be on or after the first day.');
+    if (endDate < sem.startDate || startDate > sem.endDate) throw new UserError('The break must be within the semester.');
+    return { semesterId: sem.id, name, startDate, endDate };
+  }
+
+  listBreaks(semesterId: Id): SemesterBreak[] {
+    this.liveSemester(semesterId);
+    return this.breaksBetween(semesterId, '0000-01-01', '9999-12-31');
+  }
+
+  /** Live breaks of a semester overlapping [from, to], by start date. */
+  private breaksBetween(semesterId: Id, from: ISODate, to: ISODate): SemesterBreak[] {
+    return this.all(
+      `SELECT * FROM semester_breaks WHERE semester_id = ? AND deleted_at IS NULL AND end_date >= ? AND start_date <= ?
+       ORDER BY start_date, end_date, id`,
+      semesterId,
+      from,
+      to,
+    ).map(this.mapBreak);
+  }
+
+  createBreak(input: BreakInput): SemesterBreak {
+    const v = this.breakInput(input, this.liveSemester(input?.semesterId));
+    const t = this.stamp();
+    const r = this.run(
+      'INSERT INTO semester_breaks (semester_id, name, start_date, end_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      v.semesterId,
+      v.name,
+      v.startDate,
+      v.endDate,
+      t,
+      t,
+    );
+    return this.liveBreak(Number(r.lastInsertRowid));
+  }
+
+  updateBreak(id: Id, input: BreakInput): SemesterBreak {
+    const existing = this.liveBreak(id);
+    const v = this.breakInput(input, this.liveSemester(existing.semesterId));
+    this.run('UPDATE semester_breaks SET name = ?, start_date = ?, end_date = ?, updated_at = ? WHERE id = ?', v.name, v.startDate, v.endDate, this.stamp(), id);
+    return this.liveBreak(id);
+  }
+
+  deleteBreak(id: Id): DeleteResult {
+    return this.tx(() => {
+      const b = this.liveBreak(id);
+      const sem = this.liveSemester(b.semesterId);
+      const label = `${breakTitle(b)} (${formatDateRange(b.startDate, b.endDate)})`;
+      const batch = this.newTrashBatch('break', label, sem.name);
+      this.run('UPDATE semester_breaks SET deleted_at = ?, trash_batch_id = ? WHERE id = ?', this.stamp(), batch, id);
+      return { trashId: batch, label };
+    });
   }
 
   // --------------------------------------------------------------- exercises
@@ -1231,12 +1353,16 @@ export class StudyService {
       exercises,
       series,
       exams: this.exams(sem.id, { from: ws, to: we }),
+      breaks: this.breaksBetween(sem.id, ws, we),
     };
   }
 
   getSemesterProgress(semesterId: Id): SemesterWeekProgress[] {
     const sem = this.liveSemester(semesterId);
-    return weeksBetween(sem.startDate, sem.endDate).map((w) => ({ weekStart: w, ...weekProgress(this.getWeek(semesterId, w)) }));
+    return weeksBetween(sem.startDate, sem.endDate).map((w) => {
+      const week = this.getWeek(semesterId, w);
+      return { weekStart: w, ...weekProgress(week), breaks: week.breaks.map(breakTitle) };
+    });
   }
 
   getOutstanding(semesterId: Id, today: ISODate): Outstanding {
@@ -1289,6 +1415,7 @@ export class StudyService {
       overdue: open.filter((e) => exerciseDueBy(e) < t).sort((a, b) => exerciseDueBy(a).localeCompare(exerciseDueBy(b))),
       missedLectures: lectures.filter((o) => o.date < t && !o.completed).sort(byTime),
       exams: this.exams(sem.id, { from: t }),
+      todayBreak: this.breaksBetween(sem.id, t, t)[0] ?? null,
       streak: computeStreak(tallies, sem.startDate, t),
     };
   }
@@ -1322,7 +1449,8 @@ export class StudyService {
       case 'semesters':
         return null;
       case 'subjects':
-        return semesterGone(this.get<any>('SELECT semester_id FROM subjects WHERE id = ?', id).semester_id);
+      case 'semester_breaks':
+        return semesterGone(this.get<any>(`SELECT semester_id FROM ${table} WHERE id = ?`, id).semester_id);
       case 'lectures':
       case 'exercise_series':
       case 'exams':

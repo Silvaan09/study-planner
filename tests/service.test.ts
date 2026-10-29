@@ -1074,3 +1074,129 @@ describe('schema v6', () => {
     expect(() => v6.db.exec(second)).toThrow(/UNIQUE/);
   });
 });
+
+describe('lecture dates', () => {
+  const lecture = (extra: object = {}) =>
+    svc.createLecture({ subjectId: math.id, title: 'Tutorial', weekday: 3, startTime: '14:00', endTime: '15:00', ...extra });
+  const edit = (id: number, extra: object = {}) =>
+    svc.updateLecture(id, { subjectId: math.id, title: 'Tutorial', weekday: 3, startTime: '14:00', endTime: '15:00', ...extra });
+  const dates = (lectureId: number) =>
+    svc
+      .getOutstanding(sem.id, '2026-12-31')
+      .items.filter((i) => i.kind === 'lecture' && i.occurrence.lectureId === lectureId)
+      .map((i) => i.date);
+
+  it('runs all semester without dates, and only between its own dates with them', () => {
+    const l = lecture();
+    expect(l).toMatchObject({ startDate: null, endDate: null });
+    expect(dates(l.id)).toHaveLength(14);
+    edit(l.id, { startDate: '2026-09-28', endDate: '2026-10-21' });
+    expect(dates(l.id)).toEqual(['2026-09-30', '2026-10-07', '2026-10-14', '2026-10-21']);
+    expect(svc.getLecture(l.id)).toMatchObject({ startDate: '2026-09-28', endDate: '2026-10-21' });
+    expect(svc.getWeek(sem.id, '2026-09-14').lectures).toHaveLength(0);
+    expect(() => svc.setLectureCompleted(l.id, '2026-09-14', true)).toThrow(UserError);
+    // Completion outside the range is kept and comes back when the range grows again.
+    svc.setLectureCompleted(l.id, '2026-10-19', true);
+    edit(l.id, { startDate: '2026-09-28', endDate: '2026-10-14' });
+    expect(svc.getWeek(sem.id, '2026-10-19').lectures).toHaveLength(0);
+    edit(l.id);
+    expect(svc.getWeek(sem.id, '2026-10-19').lectures[0]).toMatchObject({ date: '2026-10-21', completed: true });
+  });
+
+  it('follows the semester when it has no dates of its own', () => {
+    const short = lecture({ endDate: '2026-10-07' });
+    const l = lecture({ title: 'Lecture' });
+    svc.updateSemester(sem.id, { name: sem.name, startDate: '2026-09-21', endDate: '2026-12-18' });
+    expect(dates(l.id)).toHaveLength(13);
+    expect(dates(short.id)).toEqual(['2026-09-23', '2026-09-30', '2026-10-07']);
+  });
+
+  it('rejects dates outside the semester, in the wrong order, or without its weekday', () => {
+    expect(() => lecture({ startDate: '2026-09-01' })).toThrow(/within the semester/);
+    expect(() => lecture({ endDate: '2027-01-08' })).toThrow(/within the semester/);
+    expect(() => lecture({ startDate: '2026-10-10', endDate: '2026-10-01' })).toThrow(/on or after/);
+    expect(() => lecture({ startDate: '2026-10-01', endDate: '2026-10-06' })).toThrow(/no Wednesday/);
+    expect(lecture({ startDate: '2026-10-07', endDate: '2026-10-07' }).startDate).toBe('2026-10-07');
+  });
+});
+
+describe('breaks', () => {
+  const autumn = () => svc.createBreak({ semesterId: sem.id, name: 'Autumn break', startDate: '2026-10-19', endDate: '2026-10-23' });
+
+  it('cancels the lectures on its days but keeps exercises, exams and completion', () => {
+    const mon = svc.createLecture({ subjectId: math.id, title: 'LA', weekday: 1, startTime: '10:00', endTime: '12:00' });
+    svc.createLecture({ subjectId: math.id, title: 'Sat', weekday: 6, startTime: '10:00', endTime: '12:00' });
+    svc.setLectureCompleted(mon.id, '2026-10-19', true);
+    const [e] = svc.createExercise({ subjectId: math.id, title: 'Sheet', description: '', plannedDates: ['2026-10-20'], deadlineDate: '2026-10-22' });
+    svc.createExam({ subjectId: math.id, kind: 'midterm', title: '', date: '2026-10-21', startTime: null, endTime: null, location: '', notes: '' });
+    const b = autumn();
+    const week = svc.getWeek(sem.id, '2026-10-19');
+    expect(week.lectures.map((l) => l.title)).toEqual(['Sat']);
+    expect(week.breaks.map((x) => x.id)).toEqual([b.id]);
+    expect(week.exercises.map((x) => x.id)).toEqual([e.id]);
+    expect(week.exams).toHaveLength(1);
+    expect(() => svc.setLectureCompleted(mon.id, '2026-10-19', false)).toThrow(/Autumn break/);
+    // Not missed either, and the week picker names the break.
+    expect(svc.getToday(sem.id, '2026-10-21')).toMatchObject({ todayBreak: { id: b.id } });
+    expect(svc.getToday(sem.id, '2026-10-21').missedLectures.filter((o) => o.date >= '2026-10-19')).toEqual([]);
+    expect(svc.getSemesterProgress(sem.id)[5]).toMatchObject({ weekStart: '2026-10-19', lectures: 1, breaks: ['Autumn break'] });
+    // Removing the break brings the lecture back with its state.
+    const del = svc.deleteBreak(b.id);
+    expect(svc.getWeek(sem.id, '2026-10-19').lectures.find((l) => l.title === 'LA')?.completed).toBe(true);
+    svc.restoreTrash(del.trashId);
+    expect(svc.listBreaks(sem.id).map((x) => x.name)).toEqual(['Autumn break']);
+  });
+
+  it('is edited, listed by date, and validated against the semester', () => {
+    const b = autumn();
+    const h = svc.createBreak({ semesterId: sem.id, name: '', startDate: '2026-10-01', endDate: '2026-10-01' });
+    expect(svc.listBreaks(sem.id).map((x) => x.id)).toEqual([h.id, b.id]);
+    expect(svc.updateBreak(b.id, { semesterId: sem.id, name: 'Reading week', startDate: '2026-10-26', endDate: '2026-10-30' })).toMatchObject({
+      name: 'Reading week',
+      startDate: '2026-10-26',
+    });
+    // May run on past the end of the semester, but not lie outside it.
+    expect(svc.createBreak({ semesterId: sem.id, name: 'Christmas', startDate: '2026-12-14', endDate: '2027-01-08' }).endDate).toBe('2027-01-08');
+    expect(() => svc.createBreak({ semesterId: sem.id, name: 'x', startDate: '2027-01-04', endDate: '2027-01-08' })).toThrow(/within the semester/);
+    expect(() => svc.createBreak({ semesterId: sem.id, name: 'x', startDate: '2026-10-09', endDate: '2026-10-05' })).toThrow(/on or after/);
+  });
+
+  it('goes to the trash with its semester and cannot be restored before it', () => {
+    const b = autumn();
+    const own = svc.deleteBreak(b.id);
+    const semDel = svc.deleteSemester(sem.id);
+    expect(() => svc.restoreTrash(own.trashId)).toThrow(/Restore semester/);
+    svc.restoreTrash(semDel.trashId);
+    svc.restoreTrash(own.trashId);
+    expect(svc.listBreaks(sem.id)).toHaveLength(1);
+    svc.purgeTrash(svc.deleteBreak(b.id).trashId);
+    expect(svc.listBreaks(sem.id)).toHaveLength(0);
+  });
+});
+
+describe('schema v8', () => {
+  it('keeps existing lectures running all semester', async () => {
+    close();
+    const { migrations } = await import('../src/main/db/migrations');
+    const dir7 = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-v7-'));
+    const v7 = openDatabase(dir7, { migrations: migrations.slice(0, 7) });
+    const t = '2026-01-01T00:00:00.000Z';
+    v7.db.exec(`INSERT INTO semesters (id, name, start_date, end_date, created_at, updated_at) VALUES (1, 'S', '2026-09-14', '2026-12-18', '${t}', '${t}');
+      INSERT INTO subjects (id, semester_id, name, color, created_at, updated_at) VALUES (1, 1, 'M', '#3366ff', '${t}', '${t}');
+      INSERT INTO lectures (id, subject_id, title, weekday, start_time, end_time, created_at, updated_at) VALUES (5, 1, 'LA', 1, '10:00', '12:00', '${t}', '${t}');
+      INSERT INTO lecture_occurrences (lecture_id, week_start, completed) VALUES (5, '2026-09-21', 1);`);
+    v7.db.close();
+    const v8 = openDatabase(dir7);
+    close = () => {
+      v8.db.close();
+      fs.rmSync(dir7, { recursive: true, force: true });
+    };
+    expect(v8.schemaVersion).toBe(migrations.length);
+    expect(v8.backupsCreated).toHaveLength(1);
+    const s8 = new StudyService(v8.db);
+    expect(s8.getLecture(5)).toMatchObject({ startDate: null, endDate: null });
+    expect(s8.getWeek(1, '2026-09-21').lectures[0]).toMatchObject({ date: '2026-09-21', completed: true });
+    expect(s8.getWeek(1, '2026-12-14').lectures).toHaveLength(1);
+    expect(s8.listBreaks(1)).toEqual([]);
+  });
+});
