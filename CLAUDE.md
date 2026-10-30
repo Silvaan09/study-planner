@@ -9,6 +9,12 @@ Windows desktop app for planning a university semester around a weekly timetable
 - **Test UI against the demo data** (see Demo data), then check visually (build + launch over CDP, see Screenshots), before `npm run dist`.
 - `README.md` = public GitHub page: user-facing, short, no internals. Update it when a notable feature changes.
 - Publishing a GitHub release (`npm run release`) is outward-facing: only when the user asks.
+- **GitHub release text = the in-app "What's new" dialog.** The release description is what installed apps show after updating (see App shell → What's new), so when asked for release text, write it to read well in BOTH places:
+  - user-facing, from the version's CHANGELOG entry without development/test/README/Claude-config points; short bold lead-ins, then a sentence or two;
+  - only the Markdown the app renders: `##`/`###` headings, `-` bullets (one nested level), `1.` lists, `**bold**`, `*italic*`, `` `code` ``, `[links](https://…)`. No images, tables, HTML, block quotes or code blocks (shown as plain text);
+  - an opening `## Study Planner <version>` heading is fine (the app drops a first heading containing the version, the dialog title already says it);
+  - download/install instructions go in a final `### Updating` (or `### Installing` / `### Download`) section: the app hides sections whose heading starts with Install/Updating/Download, so they only appear on GitHub. Nothing else may rely on being GitHub-only.
+  - ALWAYS end the reply (outside the text block) with what to attach for a manual release, since auto-update depends on it: tag `v<version>`, and from `release/` all three of `Study-Planner-Setup-<version>.exe`, `Study-Planner-Setup-<version>.exe.blockmap`, `latest.yml` (from the same `npm run dist` build; a missing or stale `latest.yml` = installed apps never see the update). Mention that `npm run release` does all of it after `gh auth login` (it uses the CHANGELOG entry minus project-only points as text). If `release/` doesn't hold that version's build yet, say to run `npm run dist` first.
 
 ## Stack & commands
 
@@ -41,12 +47,14 @@ One bump per session (level of the largest change); later changes in the same se
 src/shared/dates.ts        ISO dates ("YYYY-MM-DD") + "HH:MM": math, week/month helpers (Monday = 1), formatDate/formatDateRange/formatCountdown
 src/shared/types.ts        domain types + StudyApi (the whole UI↔data contract); helpers: examTitle, sessionStatus, exercise stage helpers, breakTitle/breakOn
 src/shared/progress.ts     weekProgress, weekStatus, celebrationFor, computeStreak
+src/shared/releaseNotes.ts ReleaseNotes; changelogEntry, userFacingChangelog, parseMarkdown/parseInline (safe Markdown subset), inAppBlocks (pure)
 src/main/db/database.ts    open DB (WAL, integrity check), backups, migration runner
 src/main/db/migrations.ts  versioned schema, append only (v8)
 src/main/service.ts        ALL business rules + SQL (StudyService); UserError = message shown to the user
 src/main/main.ts           window (+ window state), data folder, IPC allow-list (serviceMethods / appMethods)
 src/main/windowState.ts    parseWindowState (pure)
 src/main/updater.ts        auto-updater (electron-updater, GitHub)
+src/main/whatsNew.ts       "What's new": release text fetch/cache, seen version; imports CHANGELOG.md as text (markdown.d.ts, esbuild `.md` loader)
 src/main/demoData.ts       demo semester (seedDemo; not used by the app)
 src/preload/preload.ts     window.studyApi: call(method, args), onUpdateStatus(listener)
 src/renderer/api.ts        typed proxy over the IPC call
@@ -57,7 +65,7 @@ src/renderer/updates.ts    useUpdateStatus()
 src/renderer/sound.ts      ding + celebration chime (Web Audio, synthesized), mute preference
 src/renderer/dialogs.tsx   Semester (+ breaks row), Breaks, Subject, Lecture, Exercise, Exam dialogs; ChecklistEditor, TimeInput, StatusPicker
 src/renderer/App.tsx       sidebar, view switching, subject focus, search (Ctrl+K) + opening its results
-src/renderer/components/   Celebration, WeekPicker, DatePicker (DateField/DatePopover), Checklist, ExamRow, ContextMenu, FocusPill, SearchPalette, Icons
+src/renderer/components/   Celebration, WeekPicker, DatePicker (DateField/DatePopover), Checklist, ExamRow, ContextMenu, FocusPill, SearchPalette, WhatsNew (dialog + Markdown rendering), Icons
 src/renderer/views/        TodayView, TimetableView, OutstandingView, SubjectsView ("Manage subjects"), TrashView, SettingsView
 src/renderer/timetableScroll.ts, swipe.ts   pure timetable rules (tested)
 src/renderer/styles.css    dark theme only; tokens on :root
@@ -106,6 +114,7 @@ Series-scope edits: a changed deadline shifts each occurrence by the same days; 
 
 - **Window state**: `<dataDir>/app-state/window-state.json` = `{ maximized, fullScreen, bounds }` (`bounds` = `getNormalBounds()`). Missing/invalid → maximized, normal size 1400×900 centred. Flags tracked via window events (a minimized window can't tell it was maximized), bounds on `resize`/`move`/`close`; written on `closed` (renderer `window.close()` skips `close`). Closed while minimized → reopens as before minimizing. `parseWindowState` drops bounds overlapping no work area by ≥ 120×60 px and grows them to the minimum 960×640. Over CDP close with `window.close()` so it's saved.
 - **Auto-update** (`updater.ts`): packaged builds only (`app.isPackaged`; dev = `disabled`). Checks on start + every 4 h, `autoDownload`, `autoInstallOnAppQuit`; `installUpdate()` = `quitAndInstall(silent, run after)`. Feed: `build.publish` (GitHub `Silvaan09/study-planner`, releases) → `app-update.yml`; a release must contain `latest.yml` + the installer named as in it (`nsis.artifactName` `Study-Planner-Setup-${version}.${ext}`, no spaces since GitHub turns spaces into dots) + blockmap: use `npm run release`. State `UpdateStatus` (`idle | disabled | checking | up-to-date | downloading | ready | error`) via `getUpdateStatus`, pushed on IPC channel `update-status`; errors only shown in Settings. `STUDY_PLANNER_UPDATE_URL` (testing) = generic feed URL (a folder served over HTTP with `latest.yml` + installer).
+- **What's new** (`whatsNew.ts`, `components/WhatsNew.tsx`): on the first start of a version (`whats-new.json`: `seenVersion`, cached `notes` by version, last 5) App shows `WhatsNewDialog` once, only when there is a semester (a fresh start marks it seen silently); Settings → Updates → "What's new in <version>" reopens it. Text: the GitHub release body of tag `v<version>` (Markdown, via `api.github.com/repos/…/releases/tags/v<version>`, 6 s timeout), fetched when an update is downloaded (`rememberReleaseNotes`, so it's there offline) or on first start; fallback = the bundled CHANGELOG entry minus project-only points (`userFacingChangelog`). Rendered by `parseMarkdown` → React elements (never HTML); `inAppBlocks` drops a leading version heading and Install/Updating/Download sections. Links open via `openExternalLink` (https only). The IPC handler awaits app methods (they may be async).
 
 ## UI
 
@@ -163,7 +172,7 @@ Series-scope edits: a changed deadline shifts each occurrence by the same days; 
 ### Outstanding & Subjects views
 
 - Outstanding: every unsettled exercise (incl. done but not handed in) and every past/today uncompleted lecture occurrence, by date; tasks tagged "Task", multi-session ones "(k of n sessions done)"; select with four stages; handing in removes the row (Undo). "Open exercises" stat = unsettled ones planned today or earlier or due within 7 days.
-- Subjects: cards with exams first (`ExamRow`, `ExamCountdown`: accent, amber ≤ 7 days, red on the day, muted past), lectures (own dates shown when set), exercises (series rows expand to occurrences, collapsed by default; standalone below; rows open `ExerciseDialog`). Personal-subject card last (titled with its name) (Tasks section only). Empty state while there are no real subjects.
+- Subjects: cards with exams first (`ExamRow`, `ExamCountdown`: accent, amber ≤ 7 days, red on the day, muted past), lectures (own dates as a line under the title when set), exercises (series rows expand to occurrences, collapsed by default; standalone below; rows open `ExerciseDialog`). Personal-subject card last (titled with its name) (Tasks section only). Empty state while there are no real subjects.
 
 ## Demo data
 
@@ -177,4 +186,4 @@ Series-scope edits: a changed deadline shifts each occurrence by the same days; 
 
 ## Tests (`npm test`)
 
-`tests/service.test.ts` (against a real temp SQLite file: business rules, lecture dates, breaks, exams, checklists, handing in, deadlines, sessions, personal tasks, Today + streak, subject overview, trash, persistence, every migration), `timetable-scroll`, `swipe`, `dates` (month helpers, countdown), `search` (ranking), `window-state`, `demo-data`.
+`tests/service.test.ts` (against a real temp SQLite file: business rules, lecture dates, breaks, exams, checklists, handing in, deadlines, sessions, personal tasks, Today + streak, subject overview, trash, persistence, every migration), `timetable-scroll`, `swipe`, `dates` (month helpers, countdown), `search` (ranking), `release-notes` (changelog extraction, Markdown subset, in-app filtering), `window-state`, `demo-data`.

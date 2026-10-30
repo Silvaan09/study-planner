@@ -5,6 +5,7 @@ import { backupTo, NewerDatabaseError, openDatabase, type OpenedDatabase } from 
 import { StudyService, UserError } from './service';
 import { parseWindowState, type WindowState } from './windowState';
 import { checkForUpdates, getUpdateStatus, initUpdater, installUpdate } from './updater';
+import { getReleaseNotes, getWhatsNew, markWhatsNewSeen } from './whatsNew';
 import type { ApiMethod, ApiResponse, AppInfo } from '../shared/types';
 
 const APP_FOLDER = 'StudyPlanner';
@@ -54,6 +55,13 @@ const appMethods: Partial<Record<ApiMethod, (...args: any[]) => unknown>> = {
   getUpdateStatus,
   checkForUpdates,
   installUpdate,
+  getWhatsNew,
+  getReleaseNotes,
+  markWhatsNewSeen,
+  openExternalLink: (url: unknown) => {
+    // Links in release notes; only web pages, never files or other protocols.
+    if (typeof url === 'string' && /^https:\/\//.test(url)) void shell.openExternal(url);
+  },
 };
 
 // Service methods callable from the UI. Anything not listed here is rejected.
@@ -70,10 +78,11 @@ const serviceMethods: ApiMethod[] = [
 ];
 
 function registerIpc(): void {
-  ipcMain.handle('api', (_event, method: ApiMethod, args: unknown[]): ApiResponse<unknown> => {
+  ipcMain.handle('api', async (_event, method: ApiMethod, args: unknown[]): Promise<ApiResponse<unknown>> => {
     try {
       let value: unknown;
-      if (method in appMethods) value = appMethods[method]!(...args);
+      // App methods may be async (e.g. fetching release notes); service methods are synchronous.
+      if (method in appMethods) value = await appMethods[method]!(...args);
       else if (serviceMethods.includes(method)) value = (service as any)[method](...args);
       else throw new Error(`Unknown API method: ${String(method)}`);
       return { ok: true, value };

@@ -15,22 +15,14 @@ Windows desktop app · works fully offline · your data stays on your PC
 
 ## Features
 
-- **Today at a glance**: what's happening now and next, today's lectures and planned exercises, anything overdue, what's due this week, and your streak of days with everything done.
-- **Weekly timetable**: Monday to Sunday in 24-hour time, showing lectures, the exercises you plan to work on, hand-in deadlines and exams in one view. Swipe left or right with two fingers on your trackpad to flip between weeks.
-- **Lecture tracking**: lectures repeat every week of the semester, or only between their own first and last dates. Click a lecture to mark that week's session as completed.
-- **Breaks and holidays**: mark your semester's breaks and holidays, and no lectures take place on those days, while exercises and exams stay put.
-- **Search**: press Ctrl+K to find any exercise, task, lecture, exam or subject, and open it or jump to its week.
-- **Exercise planning**: every exercise has one or more days you plan to work on it and, optionally, a hand-in deadline. Drag an exercise or its deadline to another day to reschedule it (hold it at the left or right edge of the timetable to move it into another week); the app won't let you plan past the deadline. Exercises without a deadline become overdue once their planned days have passed. Each planned day is a session you check off on its own; the exercise is done once all its sessions are, or once every step of its checklist is ticked off. Finishing the work and handing it in are ticked off separately, so an exercise you've worked through stays on your list until it's submitted.
-- **Personal tasks**: to-dos that don't belong to a subject (renew your passport, apply for a job) work just like exercises: planned days, optional deadline, checklist, recurring. Pick "No subject" when you create one.
-- **Checklists**: split an exercise into steps and tick them off as you go, right from the timetable or the Today page.
-- **Exams with a countdown**: add midterms, endterms and finals to each subject and see how many days are left.
-- **Recurring exercises**: create a whole series at once (`Problem Set 01`, `02`, …), weekly or every few weeks. You can change one occurrence, the following ones, or the whole series.
-- **Focus on one subject**: click a subject in the sidebar to grey out everything else in the timetable and see only its open items.
-- **Little celebrations**: a soft ding for every lecture or exercise you check off, a burst of confetti when you've completed all lectures or all exercises of a week, and a bigger one when the whole week is done. The sound can be turned off in Settings.
-- **Outstanding list**: every lecture you haven't completed and every exercise you haven't handed in yet, oldest first, with overdue exercises highlighted.
-- **Multiple semesters**: each semester and its subjects stay separate, and old semesters remain available.
-- **Safe with your data**: deleted items go to a trash bin first, the database is backed up automatically, and updates keep everything you've entered.
-- **Automatic updates**: new versions are downloaded from GitHub in the background and installed when you close the app.
+- **Your whole week on one screen.** Lectures, the days you've planned to work on each exercise, deadlines and exams, all in one timetable. 
+- **Plan the work, not just the deadline.** Pick the days you'll actually sit down for each exercise and check off every session as you go. Break the big ones into steps. Finishing an exercise and handing it in are separate, so nothing drops off your list before it's submitted. A whole series (`Problem Set 01`, `02`, …) is set up in one go.
+- **Start every day knowing what matters.** The Today page shows what's on right now, what's next, what to get done today and what's coming up this week, with a streak for every day you finish everything.
+- **Nothing slips through.** Missed lectures and unfinished exercises pile up in one Outstanding list until you deal with them, and every exam counts down.
+- **Built around your actual semester.** Courses that start late or end early, autumn breaks and public holidays: lectures only show up when they really take place.
+- **Zoom in on one subject.** Click a subject and everything else fades out, so you can see where you stand in it.
+- **Checking things off feels good.** A soft ding for every lecture and exercise, confetti when your week is done.
+- **Your data stays yours.** Everything lives offline on your PC, with daily backups, a trash bin for anything you delete, and updates that install themselves without touching your data.
 
 ## Screenshots
 

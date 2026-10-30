@@ -2,6 +2,13 @@
 
 Versions follow [semantic versioning](https://semver.org): **major** for changes you have to act on yourself or that remove features, **minor** for new features and visible UI changes (including automatic database migrations), **patch** for bug fixes and small tweaks.
 
+## 1.11.0 — 2026-10-30
+- **What's new.** The first time you open the app after an update, it shows what changed in a "What's new" window: the text of that version's release on GitHub, with its headings, lists, bold text and links. The text is downloaded together with the update, so it's there even if you're offline when you restart; if it can't be loaded, the version's changelog entry is shown instead. It appears once per version, and you can open it again in **Settings → Updates → What's new**. Links open in your browser.
+- Manage subjects: a lecture with its own dates shows them under its title. Before, the dates squeezed the title so much that it wrapped letter by letter.
+- README: all screenshots retaken (search button in the sidebar, current demo data), and a shorter, punchier features list.
+- Claude config: `CLAUDE.md` now says that GitHub release text always comes with the list of files to attach (installer, blockmap, `latest.yml`), which auto-update needs, and that the text has to work in the app's "What's new" window too.
+- Development: `npm run release` leaves the development, test, README and Claude-config points out of the release text.
+
 ## 1.10.0 — 2026-10-30
 - **Breaks and holidays.** Add your semester's breaks (e.g. the autumn break) and single holidays, and no lectures take place on those days: they're not on the timetable, don't count as missed and don't break your streak. Exercises, tasks and exams stay where they are. Add them in **Edit semester → Breaks & holidays**, or right-click a day's header in the timetable ("Add a break or holiday…"). Break days are hatched in the timetable with the break's name above them, the week picker and the week's title name the break, and the Today page says when today is a holiday. Deleted breaks go to the trash like everything else.
 - **Lectures with their own dates.** Every lecture now has a first and last lecture date. They're the semester's start and end unless you change them, so a course that starts in week 3 or ends halfway through the semester only appears in those weeks. Lectures without their own dates still follow the semester when its dates change. Manage subjects shows a lecture's dates when they differ from the semester's.

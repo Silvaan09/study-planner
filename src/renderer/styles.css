@@ -3360,3 +3360,72 @@ div.setting-row {
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* ------------------------------------------------------------------ what's new */
+.whats-new-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.whats-new-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 45%, #c084fc));
+  color: var(--on-accent);
+}
+/* GitHub release text, rendered from Markdown (components/WhatsNew.tsx). */
+.release-notes {
+  color: var(--text-2);
+  line-height: 1.55;
+  user-select: text;
+}
+.release-notes > :first-child {
+  margin-top: 0;
+}
+.release-notes h3 {
+  margin: 18px 0 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+.release-notes h4 {
+  margin: 14px 0 4px;
+  font-size: 13.5px;
+  color: var(--text);
+}
+.release-notes p {
+  margin: 0 0 10px;
+}
+.release-notes ul,
+.release-notes ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+.release-notes li {
+  margin: 5px 0;
+}
+.release-notes li::marker {
+  color: var(--text-3);
+}
+.release-notes strong {
+  color: var(--text);
+  font-weight: 650;
+}
+.release-notes code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  font-size: 12.5px;
+}
+.release-notes a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.release-notes a:hover {
+  text-decoration: underline;
+}

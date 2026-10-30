@@ -183,6 +183,13 @@ export const Download = (p: P) => (
     <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
   </Svg>
 );
+/** What's new. */
+export const Sparkles = (p: P) => (
+  <Svg {...p}>
+    <path d="M9.94 14.06 8 20l-1.94-5.94L0 12l6.06-1.94L8 4l1.94 6.06L16 12Z" transform="translate(2 -1) scale(0.9)" />
+    <path d="M19 3v4M17 5h4M19 16v4M17 18h4" />
+  </Svg>
+);
 /** Breaks and holidays. */
 export const Palm = (p: P) => (
   <Svg {...p}>
