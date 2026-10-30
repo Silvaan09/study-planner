@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { api } from './api';
 import { useLoad, useUi } from './ui';
 import { formatDate, startOfWeek, todayISO, type ISODate } from '../shared/dates';
@@ -12,6 +12,7 @@ import { TrashView } from './views/TrashView';
 import { SettingsView } from './views/SettingsView';
 import { SearchPalette, targetWeek, type SearchPick, type SearchView } from './components/SearchPalette';
 import { useUpdateStatus } from './updates';
+import { WhatsNewDialog } from './components/WhatsNew';
 import { Calendar, Download, ListTodo, Palm, Pencil, Plus, Search, Settings, Sliders, Sun, Trash, X } from './components/Icons';
 import logo from './logo.svg';
 
@@ -104,6 +105,25 @@ export function App() {
   const focus = subjects?.find((s) => s.id === focusId) ?? null;
 
   const update = useUpdateStatus();
+
+  // "What's new" once after an update. Without any semester (a fresh start) there is nothing new to tell.
+  const whatsNewChecked = useRef(false);
+  useEffect(() => {
+    if (!semesters || whatsNewChecked.current) return;
+    whatsNewChecked.current = true;
+    if (semesters.length === 0) {
+      void api.markWhatsNewSeen();
+      return;
+    }
+    api.getWhatsNew().then(
+      async (notes) => {
+        if (!notes) return;
+        await ui.dialog((close) => <WhatsNewDialog notes={notes} close={() => close()} />);
+        void api.markWhatsNewSeen();
+      },
+      () => {},
+    );
+  }, [semesters, ui]);
 
   /** Opens what a search result points at (Shift: its week in the timetable). */
   const openPick = useCallback(

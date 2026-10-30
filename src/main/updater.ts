@@ -1,6 +1,7 @@
 import { app, type BrowserWindow } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import type { UpdateStatus } from '../shared/types';
+import { rememberReleaseNotes } from './whatsNew';
 
 /**
  * Auto-update from GitHub releases (electron-updater; repository from `build.publish` in package.json).
@@ -42,7 +43,11 @@ export function initUpdater(window: () => BrowserWindow | null): void {
   autoUpdater.on('download-progress', (p) => {
     if (status.state === 'downloading') set({ ...status, percent: Math.floor(p.percent) });
   });
-  autoUpdater.on('update-downloaded', (info) => set({ state: 'ready', version: info.version }));
+  autoUpdater.on('update-downloaded', (info) => {
+    set({ state: 'ready', version: info.version });
+    // For the "What's new" dialog on the first start of the new version, also offline.
+    void rememberReleaseNotes(info.version);
+  });
   autoUpdater.on('error', (err) => {
     // A failed check or download is retried on the next check; only Settings shows it.
     if (status.state !== 'ready') set({ state: 'error', message: message(err) });

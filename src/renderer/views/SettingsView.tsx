@@ -3,7 +3,8 @@ import { api } from '../api';
 import { useLoad, useUi } from '../ui';
 import { playDing, setSoundEnabled, soundEnabled } from '../sound';
 import { useUpdateStatus } from '../updates';
-import { Database, Download, Folder, Volume, VolumeOff } from '../components/Icons';
+import { WhatsNewDialog } from '../components/WhatsNew';
+import { Database, Download, Folder, Sparkles, Volume, VolumeOff } from '../components/Icons';
 import type { UpdateStatus } from '../../shared/types';
 
 function updateText(s: UpdateStatus | null, version: string | undefined): string {
@@ -98,6 +99,17 @@ export function SettingsView() {
           <p className="muted small">
             New versions are downloaded from GitHub in the background and installed when you close the app. Your data is kept.
           </p>
+          <div className="button-row">
+            <button
+              className="btn btn-ghost small"
+              onClick={async () => {
+                const notes = await ui.run(() => api.getReleaseNotes());
+                if (notes) ui.dialog((close) => <WhatsNewDialog notes={notes} close={() => close()} />);
+              }}
+            >
+              <Sparkles size={14} /> What's new in {info?.version ?? 'this version'}
+            </button>
+          </div>
         </section>
 
         {info && (

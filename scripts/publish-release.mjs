@@ -27,7 +27,19 @@ const start = changelog.search(new RegExp(`^## ${version.replace(/\./g, '\\.')}\
 if (start < 0) fail(`CHANGELOG.md has no entry for ${version}.`);
 const body = changelog.slice(start).split('\n').slice(1);
 const end = body.findIndex((l) => l.startsWith('## '));
-const notes = body.slice(0, end < 0 ? undefined : end).join('\n').trim();
+// Without the points about the project ("Tests: …", "README: …"): the text is also the app's "What's new" dialog.
+// Same rule as userFacingChangelog in src/shared/releaseNotes.ts.
+const PROJECT_NOTE = /^- (Development|Tests|README|Docs|Claude config)\b[^:]*:/;
+let skipping = false;
+const notes = body
+  .slice(0, end < 0 ? undefined : end)
+  .filter((line) => {
+    if (line.startsWith('- ')) skipping = PROJECT_NOTE.test(line);
+    else if (!/^\s/.test(line)) skipping = false;
+    return !skipping;
+  })
+  .join('\n')
+  .trim();
 const notesFile = path.join(os.tmpdir(), `study-planner-notes-${version}.md`);
 fs.writeFileSync(notesFile, notes);
 

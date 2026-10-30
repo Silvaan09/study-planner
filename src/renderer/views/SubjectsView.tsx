@@ -193,12 +193,14 @@ export function SubjectsView({ semester, focus, clearFocus }: { semester: Semest
                     <span className="row-time">
                       {l.startTime}–{l.endTime}
                     </span>
-                    <span className="row-title">{l.title}</span>
-                    {(l.startDate || l.endDate) && (
-                      <span className="row-sub" title="Takes place only between these dates">
-                        {formatDateRange(l.startDate ?? semester.startDate, l.endDate ?? semester.endDate)}
-                      </span>
-                    )}
+                    <span className="row-title">
+                      {l.title}
+                      {(l.startDate || l.endDate) && (
+                        <span className="row-sub" title="Takes place only between these dates">
+                          {formatDateRange(l.startDate ?? semester.startDate, l.endDate ?? semester.endDate)}
+                        </span>
+                      )}
+                    </span>
                     <button className="icon-btn small" title="Edit" onClick={() => ui.dialog((close) => <LectureDialog semester={semester} subjects={subjects} lectureId={l.id} close={close} />)}>
                       <Pencil size={13} />
                     </button>

@@ -1,4 +1,5 @@
 import type { ISODate } from './dates';
+import type { ReleaseNotes } from './releaseNotes';
 
 export type Id = number;
 
@@ -487,6 +488,14 @@ export interface StudyApi {
   checkForUpdates(): void;
   /** Quits, installs the downloaded update and restarts. */
   installUpdate(): void;
+
+  /** The running version's release notes if they haven't been shown yet (see src/main/whatsNew.ts), else null. */
+  getWhatsNew(): ReleaseNotes | null;
+  /** The running version's release notes (GitHub release text, else its CHANGELOG.md entry). */
+  getReleaseNotes(): ReleaseNotes;
+  markWhatsNewSeen(): void;
+  /** Opens an https:// link in the browser. */
+  openExternalLink(url: string): void;
 }
 
 export type ApiMethod = keyof StudyApi;

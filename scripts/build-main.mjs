@@ -8,6 +8,8 @@ const common = {
   target: 'node24',
   sourcemap: true,
   external: ['electron'],
+  // CHANGELOG.md is bundled as text for the "What's new" fallback (src/main/whatsNew.ts).
+  loader: { '.md': 'text' },
   logLevel: 'info',
 };
 
