@@ -4,6 +4,7 @@ import { useLoad, useUi } from '../ui';
 import { playDing, setSoundEnabled, soundEnabled } from '../sound';
 import { useUpdateStatus } from '../updates';
 import { WhatsNewDialog } from '../components/WhatsNew';
+import { useRestartToUpdate } from '../components/UpdatingOverlay';
 import { Database, Download, Folder, Sparkles, Volume, VolumeOff } from '../components/Icons';
 import type { UpdateStatus } from '../../shared/types';
 
@@ -35,6 +36,7 @@ export function SettingsView() {
   const { data: info } = useLoad(() => api.appInfo(), []);
   const [sound, setSound] = useState(soundEnabled);
   const update = useUpdateStatus();
+  const restartToUpdate = useRestartToUpdate();
 
   return (
     <div className="page">
@@ -83,7 +85,7 @@ export function SettingsView() {
               )}
             </span>
             {update?.state === 'ready' ? (
-              <button className="btn btn-primary" onClick={() => api.installUpdate()}>
+              <button className="btn btn-primary" onClick={() => restartToUpdate(update.version)}>
                 Restart &amp; update
               </button>
             ) : (
