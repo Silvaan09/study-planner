@@ -3429,3 +3429,66 @@ div.setting-row {
 .release-notes a:hover {
   text-decoration: underline;
 }
+
+/* ------------------------------------------------------------------ updating */
+/* "Restart & update": shown until the app closes for the installer. */
+.updating-backdrop {
+  z-index: 300;
+}
+.updating {
+  width: 400px;
+  padding: 28px 28px 24px;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+}
+.updating h2 {
+  margin: 4px 0 0;
+  font-size: 17px;
+}
+.updating p {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.updating-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.updating-bar {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.updating-bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: updating-slide 1.1s ease-in-out infinite;
+}
+@keyframes updating-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .updating-bar span {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
+  }
+}

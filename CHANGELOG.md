@@ -2,7 +2,10 @@
 
 Versions follow [semantic versioning](https://semver.org): **major** for changes you have to act on yourself or that remove features, **minor** for new features and visible UI changes (including automatic database migrations), **patch** for bug fixes and small tweaks.
 
-## 1.11.0 — 2026-10-30
+## 1.11.1 — 2026-10-31
+- **You can see the update being installed.** After "Restart & update", the app says it's installing the new version, then the installer's progress window shows how far it is, and the new version opens by itself when it's done. Before, it installed invisibly for several seconds, and opening the app during that time gave an error. Updates don't ask any of the installer's questions (like who to install for) and don't need a click on Finish. Closing the app with an update waiting still installs it quietly in the background.
+- This applies to updates from this version on: the update *to* 1.11.1 still installs the old, quiet way.
+
 - **What's new.** The first time you open the app after an update, it shows what changed in a "What's new" window: the text of that version's release on GitHub, with its headings, lists, bold text and links. The text is downloaded together with the update, so it's there even if you're offline when you restart; if it can't be loaded, the version's changelog entry is shown instead. It appears once per version, and you can open it again in **Settings → Updates → What's new**. Links open in your browser.
 - Manage subjects: a lecture with its own dates shows them under its title. Before, the dates squeezed the title so much that it wrapped letter by letter.
 - README: all screenshots retaken (search button in the sidebar, current demo data), and a shorter, punchier features list.

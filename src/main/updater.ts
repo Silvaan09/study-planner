@@ -69,6 +69,8 @@ export function checkForUpdates(): void {
 
 export function installUpdate(): void {
   if (status.state !== 'ready') return;
-  // Silent install (the user already chose the install folder once), then start the new version.
-  setImmediate(() => autoUpdater.quitAndInstall(true, true));
+  // Visible installer, reduced to its progress page for updates (build/installer.nsh), which starts the new version
+  // when it's done. A silent install showed nothing for several seconds, and opening the app meanwhile failed.
+  // (Installing when the app is closed normally stays silent: autoInstallOnAppQuit.)
+  setTimeout(() => autoUpdater.quitAndInstall(false, true), 1200);
 }

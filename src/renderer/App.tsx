@@ -13,6 +13,7 @@ import { SettingsView } from './views/SettingsView';
 import { SearchPalette, targetWeek, type SearchPick, type SearchView } from './components/SearchPalette';
 import { useUpdateStatus } from './updates';
 import { WhatsNewDialog } from './components/WhatsNew';
+import { useRestartToUpdate } from './components/UpdatingOverlay';
 import { Calendar, Download, ListTodo, Palm, Pencil, Plus, Search, Settings, Sliders, Sun, Trash, X } from './components/Icons';
 import logo from './logo.svg';
 
@@ -105,6 +106,7 @@ export function App() {
   const focus = subjects?.find((s) => s.id === focusId) ?? null;
 
   const update = useUpdateStatus();
+  const restartToUpdate = useRestartToUpdate();
 
   // "What's new" once after an update. Without any semester (a fresh start) there is nothing new to tell.
   const whatsNewChecked = useRef(false);
@@ -312,7 +314,7 @@ export function App() {
 
         <nav className="nav-section sidebar-foot" aria-label="More">
           {update?.state === 'ready' && (
-            <button className="nav-item update-ready" onClick={() => api.installUpdate()} title="Restarts the app and installs the update. Otherwise it installs when you close the app.">
+            <button className="nav-item update-ready" onClick={() => restartToUpdate(update.version)} title="Restarts the app and installs the update. Otherwise it installs when you close the app.">
               <Download size={18} />
               <span>Restart to update</span>
               <span className="nav-badge">{update.version}</span>
