@@ -21,6 +21,7 @@ Windows desktop app · works fully offline · your data stays on your PC
 - **Nothing slips through.** Missed lectures and unfinished exercises pile up in one Outstanding list until you deal with them, and every exam counts down.
 - **Built around your actual semester.** Courses that start late or end early, autumn breaks and public holidays: lectures only show up when they really take place.
 - **Zoom in on one subject.** Click a subject and everything else fades out, so you can see where you stand in it.
+- **Light or dark, your choice.** Three themes in Settings: Paper (light), Slate (the default dark) and Obsidian (near-black).
 - **Checking things off feels good.** A soft ding for every lecture and exercise, confetti when your week is done.
 - **Your data stays yours.** Everything lives offline on your PC, with daily backups, a trash bin for anything you delete, and updates that install themselves without touching your data.
 
@@ -35,6 +36,10 @@ Windows desktop app · works fully offline · your data stays on your PC
 | Focus on one subject | Manage your subjects |
 |---|---|
 | ![Timetable with only Mathematics highlighted and the other subjects greyed out](docs/screenshots/subject-focus.png) | ![Subjects overview with exam countdowns, weekly lectures and an expanded exercise series](docs/screenshots/subjects.png) |
+
+| Paper (light theme) | Obsidian (dark theme) |
+|---|---|
+| ![The weekly timetable in the light Paper theme](docs/screenshots/theme-paper.png) | ![The weekly timetable in the near-black Obsidian theme](docs/screenshots/theme-obsidian.png) |
 
 ![Confetti and a "Week complete!" message after checking off the last lecture of the week](docs/screenshots/week-complete.png)
 

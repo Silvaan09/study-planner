@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, screen, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { backupTo, NewerDatabaseError, openDatabase, type OpenedDatabase } from './db/database';
@@ -6,6 +6,7 @@ import { StudyService, UserError } from './service';
 import { parseWindowState, type WindowState } from './windowState';
 import { checkForUpdates, getUpdateStatus, initUpdater, installUpdate } from './updater';
 import { getReleaseNotes, getWhatsNew, markWhatsNewSeen } from './whatsNew';
+import { applyNativeTheme, getTheme, setTheme, windowBackground } from './theme';
 import type { ApiMethod, ApiResponse, AppInfo } from '../shared/types';
 
 const APP_FOLDER = 'StudyPlanner';
@@ -58,6 +59,8 @@ const appMethods: Partial<Record<ApiMethod, (...args: any[]) => unknown>> = {
   getWhatsNew,
   getReleaseNotes,
   markWhatsNewSeen,
+  getTheme,
+  setTheme: (theme: unknown) => setTheme(theme, mainWindow),
   openExternalLink: (url: unknown) => {
     // Links in release notes; only web pages, never files or other protocols.
     if (typeof url === 'string' && /^https:\/\//.test(url)) void shell.openExternal(url);
@@ -125,7 +128,8 @@ function createWindow(): void {
     show: false,
     title: 'Study Planner',
     icon: iconPath(),
-    backgroundColor: '#12141b',
+    // The theme's background, so the window never flashes another colour before the page has painted.
+    backgroundColor: windowBackground(),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -159,8 +163,10 @@ function createWindow(): void {
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   const devUrl = process.env.VITE_DEV_SERVER_URL;
-  if (devUrl) void mainWindow.loadURL(devUrl);
-  else void mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+  // The theme goes along in the URL so the renderer applies it before its first render (see src/renderer/theme.ts).
+  const theme = getTheme();
+  if (devUrl) void mainWindow.loadURL(`${devUrl}?theme=${theme}`);
+  else void mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'), { query: { theme } });
 }
 
 function openDb(): boolean {
@@ -199,8 +205,8 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
-    // Dark title bar, dropdowns and scrollbars to match the app's dark theme.
-    nativeTheme.themeSource = 'dark';
+    // Light or dark title bar, dropdowns and scrollbars, matching the chosen theme.
+    applyNativeTheme();
     if (!openDb()) {
       app.quit();
       return;

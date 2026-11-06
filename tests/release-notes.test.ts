@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { changelogEntry, inAppBlocks, parseInline, parseMarkdown, userFacingChangelog } from '../src/shared/releaseNotes';
+import { changelogEntry, inAppBlocks, parseInline, parseMarkdown, releaseImageAllowed, userFacingChangelog } from '../src/shared/releaseNotes';
 
 describe('changelogEntry', () => {
   const changelog = '# Changelog\r\n\r\nIntro.\r\n\r\n## 1.10.1 — 2026-10-30\r\n- Fix A.\r\n- Fix B.\r\n\r\n## 1.10.0 — 2026-10-29\r\n- Old.\r\n';
@@ -84,5 +84,29 @@ describe('inAppBlocks', () => {
   });
   it('keeps a first heading that is not about the version', () => {
     expect(inAppBlocks(parseMarkdown('### New\n- A'), '1.11.0')).toHaveLength(2);
+  });
+});
+
+describe('images', () => {
+  const raw = 'https://raw.githubusercontent.com/Silvaan09/study-planner/v2.0.0/docs/screenshots/theme-paper.png';
+  it('reads Markdown images and GitHub <img> tags on a line of their own', () => {
+    const md = ['Text', '![Paper theme](' + raw + ')', '- item', '<img width="1440" alt="Shot" src="https://github.com/user-attachments/assets/abc-123" />'].join('\n');
+    expect(parseMarkdown(md)).toEqual([
+      { kind: 'paragraph', content: [{ kind: 'text', text: 'Text' }] },
+      { kind: 'image', src: raw, alt: 'Paper theme' },
+      { kind: 'list', ordered: false, items: [{ content: [{ kind: 'text', text: 'item' }] }] },
+      { kind: 'image', src: 'https://github.com/user-attachments/assets/abc-123', alt: 'Shot' },
+    ]);
+  });
+  it('only loads images from GitHub; others become a link', () => {
+    expect(releaseImageAllowed(raw)).toBe(true);
+    expect(releaseImageAllowed('https://private-user-images.githubusercontent.com/1/x.png?jwt=y')).toBe(true);
+    expect(releaseImageAllowed('http://raw.githubusercontent.com/x.png')).toBe(false);
+    expect(releaseImageAllowed('https://example.com/x.png')).toBe(false);
+    expect(releaseImageAllowed('https://github.com.evil.com/x.png')).toBe(false);
+    expect(releaseImageAllowed('file:///C:/x.png')).toBe(false);
+    expect(parseMarkdown('![Shot](https://example.com/x.png)')).toEqual([
+      { kind: 'paragraph', content: [{ kind: 'link', href: 'https://example.com/x.png', children: [{ kind: 'text', text: 'Shot' }] }] },
+    ]);
   });
 });

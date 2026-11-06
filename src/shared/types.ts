@@ -1,5 +1,6 @@
 import type { ISODate } from './dates';
 import type { ReleaseNotes } from './releaseNotes';
+import type { ThemeId } from './themes';
 
 export type Id = number;
 
@@ -496,6 +497,10 @@ export interface StudyApi {
   markWhatsNewSeen(): void;
   /** Opens an https:// link in the browser. */
   openExternalLink(url: string): void;
+
+  /** The colour theme, kept by the main process (window background, title bar; see src/main/theme.ts). */
+  getTheme(): ThemeId;
+  setTheme(theme: ThemeId): void;
 }
 
 export type ApiMethod = keyof StudyApi;

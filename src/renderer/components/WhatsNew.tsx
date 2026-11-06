@@ -1,4 +1,4 @@
-import { Fragment, useMemo, type ReactNode } from 'react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { Modal } from '../ui';
 import { inAppBlocks, parseMarkdown, type Block, type Inline, type ReleaseNotes } from '../../shared/releaseNotes';
@@ -33,8 +33,30 @@ function renderInline(items: Inline[]): ReactNode {
   });
 }
 
+/** A screenshot from the release text (GitHub only, see releaseImageAllowed). Click = full size in the browser;
+ *  if it can't load (offline), its description is shown instead. */
+function ReleaseImage({ src, alt }: { src: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return alt ? <p className="release-image-missing">Image: {alt}</p> : null;
+  return (
+    <a
+      className="release-image"
+      href={src}
+      title="Open full size"
+      onClick={(e) => {
+        e.preventDefault();
+        void api.openExternalLink(src);
+      }}
+    >
+      <img src={src} alt={alt} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+    </a>
+  );
+}
+
 function renderBlock(b: Block, k: number): ReactNode {
   switch (b.kind) {
+    case 'image':
+      return <ReleaseImage key={k} src={b.src} alt={b.alt} />;
     case 'heading':
       // Release texts use ## / ### for their sections; they all look like section titles here.
       return b.level <= 3 ? <h3 key={k}>{renderInline(b.content)}</h3> : <h4 key={k}>{renderInline(b.content)}</h4>;
@@ -66,7 +88,8 @@ export function WhatsNewDialog({ notes, close }: { notes: ReleaseNotes; close: (
         </span>
       }
       onClose={close}
-      width={600}
+      // Wider when there are screenshots, so they stay readable.
+      width={blocks.some((b) => b.kind === 'image') ? 760 : 600}
       footer={
         <>
           <button className="btn btn-ghost" onClick={() => void api.openExternalLink(notes.url.replace(/\/tag\/[^/]*$/, ''))}>

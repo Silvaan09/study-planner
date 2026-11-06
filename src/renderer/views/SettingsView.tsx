@@ -5,8 +5,41 @@ import { playDing, setSoundEnabled, soundEnabled } from '../sound';
 import { useUpdateStatus } from '../updates';
 import { WhatsNewDialog } from '../components/WhatsNew';
 import { useRestartToUpdate } from '../components/UpdatingOverlay';
-import { Database, Download, Folder, Sparkles, Volume, VolumeOff } from '../components/Icons';
+import { Check, Database, Download, Folder, Sparkles, Volume, VolumeOff } from '../components/Icons';
+import { changeTheme, currentTheme } from '../theme';
+import { THEMES, type ThemeInfo } from '../../shared/themes';
+import type { CSSProperties } from 'react';
 import type { UpdateStatus } from '../../shared/types';
+
+/** A tiny sketch of the app in a theme's colours: sidebar, header, two lectures and a task. */
+function ThemePreview({ t }: { t: ThemeInfo }) {
+  const p = t.preview;
+  const lecture = (c: string): CSSProperties =>
+    t.id === 'obsidian'
+      ? { background: `color-mix(in srgb, ${c} 8%, ${p.bg})`, boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${c} 60%, transparent)`, borderLeftColor: c }
+      : { background: `color-mix(in srgb, ${c} ${t.dark ? 28 : 22}%, ${p.surface})`, borderLeftColor: c };
+  return (
+    <span className="theme-preview" style={{ background: p.bg, borderColor: p.border }} aria-hidden>
+      <span className="tp-side" style={{ background: t.id === 'obsidian' ? p.bg : p.surface, borderColor: p.border }}>
+        <span style={{ background: p.text, width: '70%' }} />
+        <span style={{ background: p.accent, width: '85%' }} />
+        <span style={{ background: p.muted, width: '60%' }} />
+        <span style={{ background: p.muted, width: '75%' }} />
+      </span>
+      <span className="tp-main">
+        <span className="tp-head">
+          <span style={{ background: p.text }} />
+          <span className="tp-btn" style={{ background: p.accent }} />
+        </span>
+        <span className="tp-grid" style={{ background: p.surface, borderColor: p.border }}>
+          <span className="tp-card" style={{ ...lecture('#ec4899'), top: '12%', left: '6%' }} />
+          <span className="tp-card" style={{ ...lecture('#14b8a6'), top: '40%', left: '38%' }} />
+          <span className="tp-card" style={{ ...lecture('#4f6bed'), top: '18%', left: '70%' }} />
+        </span>
+      </span>
+    </span>
+  );
+}
 
 function updateText(s: UpdateStatus | null, version: string | undefined): string {
   switch (s?.state) {
@@ -35,6 +68,7 @@ export function SettingsView() {
   const ui = useUi();
   const { data: info } = useLoad(() => api.appInfo(), []);
   const [sound, setSound] = useState(soundEnabled);
+  const [theme, setTheme] = useState(currentTheme);
   const update = useUpdateStatus();
   const restartToUpdate = useRestartToUpdate();
 
@@ -43,11 +77,42 @@ export function SettingsView() {
       <header className="view-header">
         <div className="week-title">
           <h1>Settings</h1>
-          <div className="week-sub">Sounds, updates, and where your study data is stored</div>
+          <div className="week-sub">Appearance, sounds, updates, and where your study data is stored</div>
         </div>
       </header>
 
       <div className="settings">
+        <section className="info-card">
+          <h2 className="card-title">Appearance</h2>
+          <div className="theme-picker" role="radiogroup" aria-label="Theme">
+            {THEMES.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="radio"
+                aria-checked={theme === t.id}
+                className={`theme-option ${theme === t.id ? 'selected' : ''}`}
+                onClick={() => {
+                  setTheme(t.id);
+                  void ui.run(() => changeTheme(t.id));
+                }}
+              >
+                <ThemePreview t={t} />
+                <span className="theme-name">
+                  {t.name}
+                  <small>{t.tone}</small>
+                  {theme === t.id && (
+                    <span className="theme-check">
+                      <Check size={13} />
+                    </span>
+                  )}
+                </span>
+                <span className="theme-desc">{t.description}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
         <section className="info-card">
           <h2 className="card-title">Sound</h2>
           <label className="setting-row">
