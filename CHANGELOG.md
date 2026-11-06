@@ -2,6 +2,10 @@
 
 Versions follow [semantic versioning](https://semver.org): **major** for changes you have to act on yourself or that remove features, **minor** for new features and visible UI changes (including automatic database migrations), **patch** for bug fixes and small tweaks.
 
+## 1.11.2 — 2026-11-06
+- Double-clicking an exercise card in the timetable's "To do" row (for example clicking its status circle twice quickly to go from not started to done) no longer opens the "New exercise" window. Double-clicking empty space in the row still does.
+- Clicking an exercise's status circle several times quickly now steps through every status: a double click takes it from not started straight to done. Before, the second click was lost while the first one was still being saved, so it stayed in progress. The circle also changes the moment you click it.
+
 ## 1.11.1 — 2026-10-31
 - **You can see the update being installed.** After "Restart & update", the app says it's installing the new version, then the installer's progress window shows how far it is, and the new version opens by itself when it's done. Before, it installed invisibly for several seconds, and opening the app during that time gave an error. Updates don't ask any of the installer's questions (like who to install for) and don't need a click on Finish. Closing the app with an update waiting still installs it quietly in the background.
 - This applies to updates from this version on: the update *to* 1.11.1 still installs the old, quiet way.
