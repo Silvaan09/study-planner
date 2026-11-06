@@ -2,6 +2,20 @@
 
 Versions follow [semantic versioning](https://semver.org): **major** for changes you have to act on yourself or that remove features, **minor** for new features and visible UI changes (including automatic database migrations), **patch** for bug fixes and small tweaks.
 
+## 2.0.0 — 2026-11-06
+- **Themes.** Choose how Study Planner looks in **Settings → Appearance**: **Paper**, a warm light theme like a notebook page; **Slate**, the blue-grey dark look you know (still the default); or **Obsidian**, near-black and calm, where only your subjects bring colour. The app opens in your theme straight away, title bar included.
+
+![Settings → Appearance with the three themes](https://raw.githubusercontent.com/Silvaan09/study-planner/v2.0.0/docs/screenshots/appearance.png)
+
+![The timetable in Paper](https://raw.githubusercontent.com/Silvaan09/study-planner/v2.0.0/docs/screenshots/theme-paper.png)
+
+![The timetable in Obsidian](https://raw.githubusercontent.com/Silvaan09/study-planner/v2.0.0/docs/screenshots/theme-obsidian.png)
+
+- **Pictures in "What's new".** Release notes can now show screenshots, like the ones above. Click one to see it full size.
+- README: themes in the features list, with screenshots of Paper and Obsidian.
+- Tests: themes (`tests/themes.test.ts`), images in release notes (`tests/release-notes.test.ts`).
+- Claude config: `CLAUDE.md` describes the themes and how to put screenshots into release text.
+
 ## 1.11.2 — 2026-11-06
 - Double-clicking an exercise card in the timetable's "To do" row (for example clicking its status circle twice quickly to go from not started to done) no longer opens the "New exercise" window. Double-clicking empty space in the row still does.
 - Clicking an exercise's status circle several times quickly now steps through every status: a double click takes it from not started straight to done. Before, the second click was lost while the first one was still being saved, so it stayed in progress. The circle also changes the moment you click it.

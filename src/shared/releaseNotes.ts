@@ -58,7 +58,37 @@ export interface ListItem {
 export type Block =
   | { kind: 'heading'; level: number; content: Inline[]; text: string }
   | { kind: 'paragraph'; content: Inline[] }
-  | { kind: 'list'; ordered: boolean; items: ListItem[] };
+  | { kind: 'list'; ordered: boolean; items: ListItem[] }
+  | { kind: 'image'; src: string; alt: string };
+
+/**
+ * Images are only loaded from GitHub (the repo's files on raw.githubusercontent.com, images uploaded to a release on
+ * github.com/user-attachments, which redirects to *.githubusercontent.com). Must match img-src in index.html's CSP.
+ */
+export function releaseImageAllowed(src: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(src);
+  } catch {
+    return false;
+  }
+  const host = url.hostname.toLowerCase();
+  return url.protocol === 'https:' && (host === 'github.com' || host === 'raw.githubusercontent.com' || host.endsWith('.githubusercontent.com'));
+}
+
+/** An image on a line of its own: Markdown `![alt](src)`, or the `<img … src="…">` tag GitHub inserts for dropped images. */
+function imageLine(line: string): { src: string; alt: string } | null {
+  const md = /^!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)$/.exec(line);
+  if (md) return { alt: md[1], src: md[2] };
+  if (/^<img\b[^>]*>$/i.test(line)) {
+    const attr = (name: string) => new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(line);
+    const src = attr('src');
+    if (!src) return null;
+    const alt = attr('alt');
+    return { src: src[1] ?? src[2], alt: alt ? (alt[1] ?? alt[2]) : '' };
+  }
+  return null;
+}
 
 const INLINE_PATTERNS: { kind: Inline['kind']; re: RegExp }[] = [
   { kind: 'code', re: /`([^`]+)`/ },
@@ -94,7 +124,10 @@ export function parseInline(text: string): Inline[] {
   return out;
 }
 
-/** Headings (#…######), bullet and numbered lists (one nested level), paragraphs. */
+/**
+ * Headings (#…######), bullet and numbered lists (one nested level), paragraphs, and images on a line of their own
+ * (from GitHub only, see releaseImageAllowed; other images become a link).
+ */
 export function parseMarkdown(md: string): Block[] {
   const blocks: Block[] = [];
   let paragraph: string[] = [];
@@ -112,6 +145,14 @@ export function parseMarkdown(md: string): Block[] {
     if (!line.trim()) {
       flushParagraph();
       endList();
+      continue;
+    }
+    const image = imageLine(line.trim());
+    if (image) {
+      flushParagraph();
+      endList();
+      if (releaseImageAllowed(image.src)) blocks.push({ kind: 'image', ...image });
+      else blocks.push({ kind: 'paragraph', content: [{ kind: 'link', href: image.src, children: [{ kind: 'text', text: image.alt || 'Image' }] }] });
       continue;
     }
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);

@@ -1,5 +1,6 @@
 /* ------------------------------------------------------------------ tokens */
-/* The app uses a dark theme. */
+/* Themes (src/shared/themes.ts): Slate (default) here on :root; Paper (light) and Obsidian (dark) override the tokens
+   on <html data-theme="…"> further down ("themes"). Colours belong in tokens so every theme gets them right. */
 :root {
   --bg: #12141b;
   --surface: #1a1d27;
@@ -29,9 +30,149 @@
   --weekend: #202436;
   --weekend-band: #242940;
   --break: #4fb6c9;
+  /* Shadow under the timetable's sticky day headers, dim layer behind dialogs, toasts (dark in every theme). */
+  --sticky-shadow: 0 6px 12px -8px rgba(0, 0, 0, 0.6);
+  --backdrop: rgba(15, 18, 30, 0.42);
+  --toast: #1f2333;
   color-scheme: dark;
   --radius: 10px;
   --radius-sm: 6px;
+}
+
+/* ------------------------------------------------------------------ themes */
+/* Paper: warm off-white like a notebook page, ink-blue accent, soft warm shadows, slightly rounder cards. */
+:root[data-theme='paper'] {
+  color-scheme: light;
+  --bg: #f3efe7;
+  --surface: #fffdf8;
+  --surface-2: #f9f6ef;
+  --surface-3: #efe9de;
+  --border: #e3dccd;
+  --border-strong: #cdc3b0;
+  --text: #25211b;
+  --text-2: #5c5446;
+  --text-3: #8f8574;
+  --accent: #2c5d9c;
+  --accent-soft: #e1e9f4;
+  --on-accent: #ffffff;
+  --danger: #c8402f;
+  --danger-soft: #fbe7e2;
+  --warn: #b0700f;
+  --warn-soft: #f8ecd4;
+  --success: #3a8a4e;
+  --success-soft: #e1f0dc;
+  --today: #2c5d9c;
+  --shadow-sm: 0 1px 2px rgba(80, 60, 30, 0.08);
+  --shadow: 0 5px 16px rgba(80, 60, 30, 0.1);
+  --shadow-lg: 0 26px 64px rgba(80, 60, 30, 0.2);
+  --mix: 18%;
+  --mix-done: 7%;
+  --hatch: rgba(90, 70, 40, 0.05);
+  --weekend: #f7f3ea;
+  --weekend-band: #f1ece1;
+  --break: #2a8a8f;
+  --sticky-shadow: 0 6px 12px -8px rgba(80, 60, 30, 0.2);
+  --backdrop: rgba(60, 45, 25, 0.25);
+  --toast: #2b2720;
+  --radius: 11px;
+  --radius-sm: 7px;
+}
+[data-theme='paper'] .sidebar {
+  background: #f8f4ec;
+}
+[data-theme='paper'] .card,
+[data-theme='paper'] .subject-card {
+  border-radius: 14px;
+}
+[data-theme='paper'] .stat {
+  border-radius: 12px;
+}
+[data-theme='paper'] .modal {
+  border-radius: 16px;
+}
+
+/* Obsidian: neutral near-black, monochrome chrome; colour only where it means something (subjects, status, danger).
+   Flat (borders instead of shadows), small radii, outlined lectures. */
+:root[data-theme='obsidian'] {
+  --bg: #0a0a0b;
+  --surface: #121214;
+  --surface-2: #17171a;
+  --surface-3: #202024;
+  --border: #232327;
+  --border-strong: #34343a;
+  --text: #ededef;
+  --text-2: #a1a1aa;
+  --text-3: #6b6b74;
+  --accent: #f4f4f5;
+  --accent-soft: #232327;
+  --on-accent: #0a0a0b;
+  --danger: #ff5f5f;
+  --danger-soft: #2a1414;
+  --warn: #f5a524;
+  --warn-soft: #2b210f;
+  --success: #3ecf8e;
+  --success-soft: #0f2a1e;
+  --today: #f4f4f5;
+  --shadow-sm: none;
+  --shadow: 0 0 0 1px #2c2c31;
+  --shadow-lg: 0 0 0 1px #2c2c31, 0 24px 60px rgba(0, 0, 0, 0.7);
+  --mix: 15%;
+  --mix-done: 6%;
+  --hatch: rgba(255, 255, 255, 0.025);
+  --weekend: #0f0f11;
+  --weekend-band: #141416;
+  --break: #5ec4d6;
+  --backdrop: rgba(0, 0, 0, 0.55);
+  --toast: #1c1c20;
+  --radius: 6px;
+  --radius-sm: 4px;
+}
+[data-theme='obsidian'] .sidebar {
+  background: var(--bg);
+}
+[data-theme='obsidian'] .nav-item {
+  border-radius: 5px;
+}
+[data-theme='obsidian'] .nav-item.active {
+  background: var(--surface-3);
+  color: var(--text);
+  box-shadow: inset 2px 0 0 var(--text);
+}
+[data-theme='obsidian'] .week-title h1 {
+  letter-spacing: -0.02em;
+}
+[data-theme='obsidian'] .lecture {
+  border-radius: 4px;
+  border-left-width: 3px;
+}
+/* Outlined lectures: near-black fill and a coloured hairline; the subject colour frames the card instead of filling it. */
+[data-theme='obsidian'] .lecture:not(.completed) {
+  background: color-mix(in srgb, var(--c) 7%, var(--bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent);
+}
+[data-theme='obsidian'] .lecture.missed:not(.completed) {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 65%, transparent);
+}
+[data-theme='obsidian'] .lecture:not(.completed) .lec-title {
+  color: color-mix(in srgb, var(--c) 35%, #fff);
+}
+[data-theme='obsidian'] .ex-chip {
+  border-radius: 4px;
+}
+[data-theme='obsidian'] .ex-chip.planned {
+  border-left-width: 3px;
+}
+[data-theme='obsidian'] .card,
+[data-theme='obsidian'] .subject-card,
+[data-theme='obsidian'] .stat {
+  border-radius: 6px;
+}
+[data-theme='obsidian'] .subject-card {
+  border-top-width: 2px;
+}
+[data-theme='obsidian'] .modal {
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
 }
 
 /* ------------------------------------------------------------------ base */
@@ -52,6 +193,10 @@ body {
   -webkit-font-smoothing: antialiased;
   user-select: none;
   overflow: hidden;
+}
+/* Until the script has set the theme, show the window's own background (the theme's colour, set by the main process). */
+html:not([data-theme]) body {
+  background: transparent;
 }
 input,
 textarea,
@@ -1428,7 +1573,7 @@ textarea.input {
   top: 0;
   z-index: 10;
   background: var(--surface);
-  box-shadow: 0 6px 12px -8px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--sticky-shadow);
 }
 .tt-grid {
   position: relative;
@@ -1955,6 +2100,116 @@ button.row-item:hover {
   display: flex;
   gap: 8px;
 }
+/* Settings → Appearance: one card per theme with a small sketch of the app in its colours. */
+.theme-picker {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.theme-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.theme-option:hover {
+  border-color: var(--border-strong);
+}
+.theme-option.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.theme-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 6px 4px 0;
+  font-weight: 700;
+}
+.theme-name small {
+  color: var(--text-3);
+  font-weight: 500;
+  font-size: 12px;
+}
+.theme-check {
+  margin-left: auto;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.theme-desc {
+  margin: 0 4px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.theme-preview {
+  display: flex;
+  height: 92px;
+  border: 1px solid;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.tp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 26%;
+  padding: 9px 7px;
+  border-right: 1px solid;
+}
+.tp-side > span,
+.tp-head > span {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  opacity: 0.85;
+}
+.tp-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px;
+}
+.tp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.tp-head > span:first-child {
+  width: 40%;
+}
+.tp-head > .tp-btn {
+  width: 18%;
+  height: 8px;
+  border-radius: 3px;
+  opacity: 1;
+}
+.tp-grid {
+  position: relative;
+  flex: 1;
+  border: 1px solid;
+  border-radius: 4px;
+}
+.tp-card {
+  position: absolute;
+  width: 26%;
+  height: 40%;
+  border-left: 3px solid;
+  border-radius: 3px;
+}
 
 /* ------------------------------------------------------------------ welcome */
 .welcome {
@@ -1997,7 +2252,7 @@ button.row-item:hover {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(15, 18, 30, 0.42);
+  background: var(--backdrop);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -2327,7 +2582,7 @@ button.row-item:hover {
   max-width: 560px;
   padding: 10px 12px 10px 16px;
   border-radius: 10px;
-  background: #1f2333;
+  background: var(--toast);
   color: #f1f3f9;
   box-shadow: var(--shadow-lg);
   font-size: 13px;
@@ -2337,7 +2592,7 @@ button.row-item:hover {
   background: #b3202c;
 }
 .toast-success {
-  background: #1f2333;
+  background: var(--toast);
   border-left: 4px solid #3fbf7f;
 }
 .toast-action {
@@ -3428,6 +3683,23 @@ div.setting-row {
 }
 .release-notes a:hover {
   text-decoration: underline;
+}
+.release-notes .release-image {
+  display: block;
+  margin: 4px 0 14px;
+  cursor: zoom-in;
+}
+.release-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+}
+.release-image-missing {
+  color: var(--text-3);
+  font-style: italic;
 }
 
 /* ------------------------------------------------------------------ updating */
