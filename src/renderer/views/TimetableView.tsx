@@ -298,7 +298,47 @@ export function TimetableView({
   const toggleLecture = (o: LectureOccurrence) =>
     ui.run(() => completing(o.completed ? [] : [o.weekStart], () => api.setLectureCompleted(o.lectureId, o.weekStart, !o.completed)));
   /** Status circle on a planned card: the work of that session only; handing in is the deadline card's flag. */
-  const cycleStatus = (e: Exercise, day: ISODate) => progress.setSession(e, day, NEXT_STATUS[sessionStatus(e, day)]);
+  // Clicking a planned card's circle shows the next status at once and saves in order, so quick repeated clicks
+  // (e.g. a double click: not started → in progress → done) build on each other instead of each starting from the
+  // status loaded before the first click was saved. An entry is dropped once the loaded data shows it.
+  const [clicked, setClicked] = useState<ReadonlyMap<string, { status: ExerciseStatus; saved: boolean }>>(new Map());
+  const saves = useRef<Promise<unknown>>(Promise.resolve());
+  const cardStatus = (e: Exercise, day: ISODate) => clicked.get(`${e.id}:${day}`)?.status ?? sessionStatus(e, day);
+  const updateClicked = (key: string, fn: (entry: { status: ExerciseStatus; saved: boolean } | undefined) => { status: ExerciseStatus; saved: boolean } | undefined) =>
+    setClicked((m) => {
+      const entry = fn(m.get(key));
+      if (entry === m.get(key)) return m;
+      const next = new Map(m);
+      if (entry) next.set(key, entry);
+      else next.delete(key);
+      return next;
+    });
+  const cycleStatus = (e: Exercise, day: ISODate) => {
+    const key = `${e.id}:${day}`;
+    const current = cardStatus(e, day);
+    const status = NEXT_STATUS[current];
+    const entry = { status, saved: false };
+    updateClicked(key, () => entry);
+    // The exercise as it will be when this save runs, so "just completed" (ding, celebration) is judged correctly.
+    const shown = { ...e, sessions: e.sessions.map((s) => (s.date === day ? { ...s, status: current } : s)) };
+    saves.current = saves.current.then(() => progress.setSession(shown, day, status));
+    void saves.current.then(() => {
+      updateClicked(key, (x) => (x === entry ? { status, saved: true } : x));
+      // Fallback if the save failed (the data then never shows it): back to what's loaded.
+      setTimeout(() => updateClicked(key, (x) => (x?.status === status && x.saved ? undefined : x)), 1500);
+    });
+  };
+  useEffect(() => {
+    if (clicked.size === 0) return;
+    const exercises = [...byWeek.values()].flatMap((w) => w.exercises);
+    for (const [key, entry] of clicked) {
+      if (!entry.saved) continue;
+      const [id, day] = key.split(':');
+      const e = exercises.find((x) => x.id === Number(id) && x.plannedDates.includes(day));
+      if (!e || sessionStatus(e, day) === entry.status) updateClicked(key, (x) => (x?.saved ? undefined : x));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [byWeek, clicked]);
   /** Flag on a deadline card: hand the exercise in (which also marks the work done), or take that back. */
   const toggleHandedIn = (e: Exercise) => progress.setHandedIn(e, !e.handedIn);
 
@@ -798,10 +838,21 @@ export function TimetableView({
         {L.days.map((d) => {
           const list = (L.week?.exercises ?? []).filter((e) => e.plannedDates.includes(d));
           return (
-            <div key={d} className={`tt-cell ${dayClass(d, L.week)}`} {...dropProps(d)} onDoubleClick={() => newExercise(d)}>
+            <div
+              key={d}
+              className={`tt-cell ${dayClass(d, L.week)}`}
+              {...dropProps(d)}
+              onDoubleClick={(ev) => {
+                // Only empty space creates an exercise: double clicks on a card (e.g. quickly cycling its
+                // status circle twice) or inside something portaled from the cell don't.
+                const target = ev.target as Element;
+                if (!ev.currentTarget.contains(target) || target.closest('.ex-chip')) return;
+                newExercise(d);
+              }}
+            >
               {list.map((e) => {
                 // This card is one session: its own progress, not the exercise's.
-                const status = sessionStatus(e, d);
+                const status = cardStatus(e, d);
                 const overdue = status !== 'completed' && e.status !== 'completed' && exerciseDueBy(e) < today;
                 const dueIn = e.deadlineDate === null ? null : diffDays(d, e.deadlineDate);
                 const sessions = e.plannedDates.length;
