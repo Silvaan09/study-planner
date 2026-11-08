@@ -2,6 +2,10 @@
 
 Versions follow [semantic versioning](https://semver.org): **major** for changes you have to act on yourself or that remove features, **minor** for new features and visible UI changes (including automatic database migrations), **patch** for bug fixes and small tweaks.
 
+## 2.1.1 — 2026-11-08
+- **Study weeks follow the semester.** The exam study period now starts on the Monday after the semester's last week, so study weeks and semester weeks never overlap. It runs until your last exam, as before.
+- **Calmer timetable header.** The study days no longer each carry an "Exam study" label. Their violet tint and the week's title ("Exam study week 1 of 7") show it.
+
 ## 2.1.0 — 2026-11-08
 - **Exam study period.** Once the lectures are over, the timetable marks the time until your last exam: every day from the day after the last lecture until the last exam gets a violet tint and an "Exam study" label, so those weeks look different from the semester and from the crossed-out weeks after it. The week's title says which study week it is ("Exam study week 2 of 8"), the week picker lists the study weeks after the semester, and the Today page tells you when you're in it. It's worked out automatically from your lectures and exams and updates when they change. Plan your revision there like in any other week.
 - **Deadlines without work sessions.** An exercise or task can now have only a deadline, for things like signing up for something, where there's nothing to plan time for. In the exercise window, set a deadline and remove all planned days, or double-click empty space in the timetable's "Due" row to create one on that day. It only shows on its deadline; click its flag once it's dealt with.

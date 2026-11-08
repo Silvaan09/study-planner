@@ -3396,27 +3396,6 @@ button.today-row {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.day-study {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  max-width: 100%;
-  padding: 1px 7px 1px 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--study) 16%, transparent);
-  color: var(--study);
-  font-size: 11px;
-  font-weight: 600;
-}
-.day-study svg {
-  flex: none;
-}
-.day-study span {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
 .key-study {
   background: color-mix(in srgb, var(--study) 22%, transparent);
   border: 1px solid color-mix(in srgb, var(--study) 60%, var(--border));
