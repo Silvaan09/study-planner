@@ -100,8 +100,8 @@ export function breakOn(breaks: SemesterBreak[], date: ISODate): SemesterBreak |
 }
 
 /**
- * The exam study period of a semester, worked out from its lectures and exams: from the day after the last lecture
- * (or, without lectures, after the semester's end) until the day of the last exam. Null when no exam comes later.
+ * The exam study period of a semester, worked out from its dates and exams: from the Monday after the semester's
+ * last week until the day of the last exam (never overlapping semester weeks). Null when no exam comes later.
  */
 export interface StudyPeriod {
   startDate: ISODate;

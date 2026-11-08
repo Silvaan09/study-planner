@@ -89,11 +89,11 @@ describe('demo data (npm run seed-demo)', () => {
     expect([signUp.plannedDates, signUp.handedIn]).toEqual([[], true]);
     expect(out.items.some((i) => i.kind === 'exercise' && i.exercise.title === 'Register for the exam session' && i.date === '2026-10-16')).toBe(true);
 
-    // Exam study period: from the day after the last lecture (Fri 18 Dec) until the last exam (1 Feb).
-    expect(todayData.studyPeriod).toEqual({ startDate: '2026-12-19', endDate: '2027-02-01' });
+    // Exam study period: from the Monday after the semester's last week until the last exam (1 Feb).
+    expect(todayData.studyPeriod).toEqual({ startDate: '2026-12-21', endDate: '2027-02-01' });
     const weeks = svc.getSemesterProgress(semesterId);
     expect(weeks.at(-1)!.weekStart).toBe('2027-02-01');
-    expect(weeks.filter((w) => w.study).map((w) => w.weekStart)[0]).toBe('2026-12-14');
+    expect(weeks.filter((w) => w.study).map((w) => w.weekStart)[0]).toBe('2026-12-21');
   });
 
   it('can be seeded late in the semester, across the break', () => {

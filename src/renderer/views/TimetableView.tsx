@@ -50,7 +50,7 @@ import { ChecklistPopover, ChecklistProgress } from '../components/Checklist';
 import { examTime } from '../components/ExamRow';
 import { bestTopMinute } from '../timetableScroll';
 import { FLICK_SPEED, SWITCH_FRACTION, glideMs, landingWeek, swipeSpeed, swipeWindow, velocityAtRelease, withPending } from '../swipe';
-import { BookOpen, Calendar, Check, ChevronLeft, ChevronRight, Flag, GraduationCap, Info, Palm, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
+import { Calendar, Check, ChevronLeft, ChevronRight, Flag, GraduationCap, Info, Palm, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
 
 const HOUR_PX = 64;
 /** Width of the right-hand edge zone that switches to the next week while dragging. */
@@ -824,7 +824,7 @@ export function TimetableView({
               <span className="key key-break" /> Break or holiday (no lectures; right-click a day to add one)
             </div>
             <div className="legend-key">
-              <span className="key key-study" /> Exam study period (after the last lecture until the last exam)
+              <span className="key key-study" /> Exam study period (after the semester until the last exam)
             </div>
           </div>
         </div>
@@ -835,22 +835,10 @@ export function TimetableView({
             {d.slice(8) === '01' || i === 0 ? <span className="mon">{formatDate(d).split(' ')[1]}</span> : null}
             {(() => {
               const b = breakOn(L.week?.breaks ?? [], d);
-              const p = L.week?.studyPeriod ?? null;
-              if (b) {
-                return (
-                  <span className="day-break" title={`${breakTitle(b)} (${formatDateRange(b.startDate, b.endDate)}): no lectures`}>
-                    <Palm size={12} />
-                    <span>{breakTitle(b)}</span>
-                  </span>
-                );
-              }
-              return p && inStudyPeriod(p, d) ? (
-                <span
-                  className="day-study"
-                  title={`Exam study period (${formatDateRange(p.startDate, p.endDate)}): from the day after the last lecture until the last exam`}
-                >
-                  <BookOpen size={12} />
-                  <span>Exam study</span>
+              return b ? (
+                <span className="day-break" title={`${breakTitle(b)} (${formatDateRange(b.startDate, b.endDate)}): no lectures`}>
+                  <Palm size={12} />
+                  <span>{breakTitle(b)}</span>
                 </span>
               ) : null;
             })()}

@@ -1373,15 +1373,13 @@ export class StudyService {
   }
 
   /**
-   * The exam study period: from the day after the last lecture (without lectures: after the semester's end) until
-   * the last exam. Follows the lectures, breaks and exams as they change; null when no exam comes after that.
+   * The exam study period: from the Monday after the semester's last week until the last exam, so study weeks never
+   * overlap semester weeks. Follows the semester's dates and the exams; null when no exam comes after the semester.
    */
   private studyPeriod(sem: Semester): StudyPeriod | null {
     const last = this.exams(sem.id).pop();
     if (!last) return null;
-    const lectures = this.lectureOccurrences(sem, sem.startDate, sem.endDate);
-    const lastLecture = lectures.reduce<ISODate>((max, o) => (o.date > max ? o.date : max), '');
-    const startDate = addDays(lastLecture || sem.endDate, 1);
+    const startDate = addDays(startOfWeek(sem.endDate), 7);
     return last.date >= startDate ? { startDate, endDate: last.date } : null;
   }
 

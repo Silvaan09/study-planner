@@ -1271,27 +1271,26 @@ describe('exercises with only a deadline', () => {
 });
 
 describe('exam study period', () => {
-  it('runs from the day after the last lecture until the last exam', () => {
+  it("runs from the Monday after the semester's last week until the last exam", () => {
     // No exams: none.
     expect(svc.getWeek(sem.id, '2026-12-14').studyPeriod).toBeNull();
-    // Without lectures it starts after the semester's end.
+    // The semester ends Fri 18 Dec: the study weeks start Mon 21 Dec, also when the lectures end earlier.
+    svc.createLecture({ subjectId: math.id, title: 'LA', weekday: 3, startTime: '10:00', endTime: '12:00', endDate: '2026-12-02' });
     svc.createExam({ subjectId: math.id, kind: 'final', title: '', date: '2027-01-20', startTime: null, endTime: null, location: '', notes: '' });
-    expect(svc.getWeek(sem.id, '2026-12-14').studyPeriod).toEqual({ startDate: '2026-12-19', endDate: '2027-01-20' });
-    // Lectures ending early (Wednesdays until 2 Dec) start it earlier; a deleted last week moves it back further.
-    const l = svc.createLecture({ subjectId: math.id, title: 'LA', weekday: 3, startTime: '10:00', endTime: '12:00', endDate: '2026-12-02' });
-    expect(svc.getToday(sem.id, '2026-11-01').studyPeriod).toEqual({ startDate: '2026-12-03', endDate: '2027-01-20' });
-    svc.deleteLecture(l.id, 'this', '2026-11-30');
-    expect(svc.getWeek(sem.id, '2026-11-30').studyPeriod).toEqual({ startDate: '2026-11-26', endDate: '2027-01-20' });
-    // The week picker covers its weeks too.
+    expect(svc.getWeek(sem.id, '2026-12-14').studyPeriod).toEqual({ startDate: '2026-12-21', endDate: '2027-01-20' });
+    expect(svc.getToday(sem.id, '2026-11-01').studyPeriod).toEqual({ startDate: '2026-12-21', endDate: '2027-01-20' });
+    // The week picker lists its weeks after the semester's, without overlap.
     const weeks = svc.getSemesterProgress(sem.id);
     expect(weeks.at(-1)).toMatchObject({ weekStart: '2027-01-18', study: true });
-    expect(weeks.filter((w) => w.study).map((w) => w.weekStart)[0]).toBe('2026-11-23');
-    expect(weeks.find((w) => w.weekStart === '2026-11-16')!.study).toBe(false);
+    expect(weeks.filter((w) => w.study).map((w) => w.weekStart)).toEqual(['2026-12-21', '2026-12-28', '2027-01-04', '2027-01-11', '2027-01-18']);
+    // A semester ending on a Sunday: the next day.
+    svc.updateSemester(sem.id, { name: sem.name, startDate: sem.startDate, endDate: '2026-12-20' });
+    expect(svc.getWeek(sem.id, '2026-12-14').studyPeriod!.startDate).toBe('2026-12-21');
   });
 
-  it('is left out when the last exam is before the end of the lectures', () => {
+  it('is left out when the last exam is within the semester', () => {
     svc.createLecture({ subjectId: math.id, title: 'LA', weekday: 1, startTime: '10:00', endTime: '12:00' });
-    svc.createExam({ subjectId: math.id, kind: 'midterm', title: '', date: '2026-11-04', startTime: null, endTime: null, location: '', notes: '' });
+    svc.createExam({ subjectId: math.id, kind: 'midterm', title: '', date: '2026-12-18', startTime: null, endTime: null, location: '', notes: '' });
     expect(svc.getWeek(sem.id, '2026-11-02').studyPeriod).toBeNull();
     expect(svc.getSemesterProgress(sem.id).some((w) => w.study)).toBe(false);
     expect(svc.getSemesterProgress(sem.id).at(-1)!.weekStart).toBe('2026-12-14');
