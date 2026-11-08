@@ -23,7 +23,9 @@ import { weekProgress } from '../../shared/progress';
 import {
   breakOn,
   breakTitle,
+  deadlineOnly,
   exerciseDueBy,
+  inStudyPeriod,
   EXERCISE_STAGE_LABEL,
   EXERCISE_STATUS_LABEL,
   EXERCISE_STATUSES,
@@ -48,7 +50,7 @@ import { ChecklistPopover, ChecklistProgress } from '../components/Checklist';
 import { examTime } from '../components/ExamRow';
 import { bestTopMinute } from '../timetableScroll';
 import { FLICK_SPEED, SWITCH_FRACTION, glideMs, landingWeek, swipeSpeed, swipeWindow, velocityAtRelease, withPending } from '../swipe';
-import { Calendar, Check, ChevronLeft, ChevronRight, Flag, GraduationCap, Info, Palm, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
+import { BookOpen, Calendar, Check, ChevronLeft, ChevronRight, Flag, GraduationCap, Info, Palm, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
 
 const HOUR_PX = 64;
 /** Width of the right-hand edge zone that switches to the next week while dragging. */
@@ -219,6 +221,10 @@ export function TimetableView({
   const isTask = (e: Exercise) => e.subjectId === personal?.id;
   const semWeeks = useMemo(() => weeksBetween(semester.startDate, semester.endDate), [semester]);
   const weekIndex = semWeeks.indexOf(shownWeek);
+  // The exam study period (after the last lecture until the last exam) and its weeks.
+  const period = data?.studyPeriod ?? null;
+  const studyWeeks = useMemo(() => (period ? weeksBetween(period.startDate, period.endDate) : []), [period?.startDate, period?.endDate]);
+  const studyIndex = studyWeeks.indexOf(shownWeek);
 
   // The shown week and the weeks beside it (seen only while swiping).
   const layout = useMemo(() => weekLayout(data, shownWeek), [data, shownWeek]);
@@ -281,6 +287,9 @@ export function TimetableView({
   const openExam = (id: number) => ui.dialog((close) => <ExamDialog semester={semester} subjects={subjects} examId={id} close={close} />);
   const newExercise = (plannedDate?: ISODate) =>
     ui.dialog((close) => <ExerciseDialog semester={semester} subjects={subjects} defaults={{ plannedDate: plannedDate ?? defaultPlannedDate(weekStart, today) }} close={close} />);
+  /** Double click in the "Due" row: an exercise with only that deadline (nothing to work on, e.g. a registration). */
+  const newDeadline = (deadlineDate: ISODate) =>
+    ui.dialog((close) => <ExerciseDialog semester={semester} subjects={subjects} defaults={{ deadlineDate }} close={close} />);
   const newLecture = (weekday?: number, startMin?: number) =>
     ui.dialog((close) => (
       <LectureDialog
@@ -444,7 +453,7 @@ export function TimetableView({
     if (!dragging) return false;
     const { e, kind } = dragging;
     if (kind === 'planned') return e.deadlineDate === null || day <= e.deadlineDate;
-    return day >= e.plannedDates[e.plannedDates.length - 1];
+    return deadlineOnly(e) || day >= e.plannedDates[e.plannedDates.length - 1];
   };
   const dropProps = (day: ISODate) => ({
     onDragOver: (ev: DragEvent) => {
@@ -467,7 +476,7 @@ export function TimetableView({
       const ex = drag.e;
       if (drag.kind === 'deadline') {
         const last = ex.plannedDates[ex.plannedDates.length - 1];
-        if (day < last) {
+        if (last !== undefined && day < last) {
           ui.toast(`"${ex.title}" is planned for ${formatDate(last, { weekday: true })} — the deadline can't be before that.`, { kind: 'error' });
           return;
         }
@@ -749,17 +758,21 @@ export function TimetableView({
     });
   }, [shownWeek]);
 
-  const dayClass = (day: ISODate, week: WeekData | undefined) =>
-    [
+  const dayClass = (day: ISODate, week: WeekData | undefined) => {
+    const study = inStudyPeriod(week?.studyPeriod ?? null, day);
+    return [
       day === today && 'today',
       weekday(day) >= 6 && 'weekend',
-      (day < semester.startDate || day > semester.endDate) && 'outside',
+      // Days of the exam study period aren't crossed out, even after the semester's end.
+      (day < semester.startDate || day > semester.endDate) && !study && 'outside',
+      study && 'study',
       breakOn(week?.breaks ?? [], day) && 'break',
       dragging && (canDrop(day) ? 'drop-ok' : 'drop-no'),
       dragging && dropDay === day && 'drop-hover',
     ]
       .filter(Boolean)
       .join(' ');
+  };
 
   const nowMin = now.getHours() * 60 + now.getMinutes();
 
@@ -810,6 +823,9 @@ export function TimetableView({
             <div className="legend-key">
               <span className="key key-break" /> Break or holiday (no lectures; right-click a day to add one)
             </div>
+            <div className="legend-key">
+              <span className="key key-study" /> Exam study period (after the last lecture until the last exam)
+            </div>
           </div>
         </div>
         {L.days.map((d, i) => (
@@ -819,10 +835,22 @@ export function TimetableView({
             {d.slice(8) === '01' || i === 0 ? <span className="mon">{formatDate(d).split(' ')[1]}</span> : null}
             {(() => {
               const b = breakOn(L.week?.breaks ?? [], d);
-              return b ? (
-                <span className="day-break" title={`${breakTitle(b)} (${formatDateRange(b.startDate, b.endDate)}): no lectures`}>
-                  <Palm size={12} />
-                  <span>{breakTitle(b)}</span>
+              const p = L.week?.studyPeriod ?? null;
+              if (b) {
+                return (
+                  <span className="day-break" title={`${breakTitle(b)} (${formatDateRange(b.startDate, b.endDate)}): no lectures`}>
+                    <Palm size={12} />
+                    <span>{breakTitle(b)}</span>
+                  </span>
+                );
+              }
+              return p && inStudyPeriod(p, d) ? (
+                <span
+                  className="day-study"
+                  title={`Exam study period (${formatDateRange(p.startDate, p.endDate)}): from the day after the last lecture until the last exam`}
+                >
+                  <BookOpen size={12} />
+                  <span>Exam study</span>
                 </span>
               ) : null;
             })()}
@@ -940,7 +968,17 @@ export function TimetableView({
           const list = (L.week?.exercises ?? []).filter((e) => e.deadlineDate === d);
           const exams = (L.week?.exams ?? []).filter((x) => x.date === d);
           return (
-            <div key={d} className={`tt-cell ${dayClass(d, L.week)}`} {...dropProps(d)}>
+            <div
+              key={d}
+              className={`tt-cell ${dayClass(d, L.week)}`}
+              {...dropProps(d)}
+              onDoubleClick={(ev) => {
+                // Empty space only (see the "To do" row): a new exercise with only this deadline.
+                const target = ev.target as Element;
+                if (!ev.currentTarget.contains(target) || target.closest('.ex-chip')) return;
+                newDeadline(d);
+              }}
+            >
               {exams.map((x) => {
                 const time = examTime(x);
                 return (
@@ -987,7 +1025,7 @@ export function TimetableView({
                     onClick={() => openExercise(e.id)}
                     onKeyDown={(ev) => ev.key === 'Enter' && openExercise(e.id)}
                     onContextMenu={(ev) => exerciseMenu(ev, e)}
-                    title={`Deadline: ${e.title} (${subjectName(e.subjectId)}) — ${EXERCISE_STAGE_LABEL[exerciseStage(e)]}\nPlanned for ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}\nDrag to another day to move the deadline (hold it at the left or right edge to change weeks).`}
+                    title={`Deadline: ${e.title} (${subjectName(e.subjectId)}) — ${EXERCISE_STAGE_LABEL[exerciseStage(e)]}\n${deadlineOnly(e) ? 'Deadline only, no days planned to work on it' : `Planned for ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}`}\nDrag to another day to move the deadline (hold it at the left or right edge to change weeks).`}
                   >
                     <button
                       className="due-check"
@@ -1111,7 +1149,13 @@ export function TimetableView({
         <div className="week-title">
           <h1>{formatWeekRange(shownWeek)}</h1>
           <div className="week-sub">
-            {weekIndex >= 0 ? `Semester week ${weekIndex + 1} of ${semWeeks.length}` : 'Outside the semester'} · Calendar week {isoWeekNumber(shownWeek)}
+            {weekIndex >= 0 ? `Semester week ${weekIndex + 1} of ${semWeeks.length}` : studyIndex < 0 && 'Outside the semester'}
+            {studyIndex >= 0 && (
+              <span className="week-study">
+                {weekIndex >= 0 && ' · '}Exam study week {studyIndex + 1} of {studyWeeks.length}
+              </span>
+            )}{' '}
+            · Calendar week {isoWeekNumber(shownWeek)}
             {data && data.breaks.length > 0 && <span className="week-break"> · {data.breaks.map(breakTitle).join(', ')}</span>}
           </div>
         </div>
@@ -1132,7 +1176,7 @@ export function TimetableView({
               anchor={dateBtnRef.current}
               value={weekStart}
               weeks
-              range={{ start: semester.startDate, end: semester.endDate }}
+              range={{ start: semester.startDate, end: period && period.endDate > semester.endDate ? period.endDate : semester.endDate }}
               onSelect={(d) => setWeekStart(startOfWeek(d))}
               onClose={closeJump}
             />

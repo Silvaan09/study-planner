@@ -14,11 +14,21 @@ function statusTitle(p: SemesterWeekProgress | undefined): string | undefined {
   return `${STATUS_TEXT[status]} · ${p.lecturesDone}/${p.lectures} lectures, ${p.exercisesDone}/${p.exercises} exercises`;
 }
 
-/** "Jump to semester week" dropdown. Each week shows whether it's completed, in progress or not started. */
+/**
+ * "Jump to semester week" dropdown: the semester's weeks, then those of the exam study period after it. Each week
+ * shows whether it's completed, in progress or not started.
+ */
 export function WeekPicker({ semester, weekStart, onChange }: { semester: Semester; weekStart: ISODate; onChange: (w: ISODate) => void }) {
-  const weeks = useMemo(() => weeksBetween(semester.startDate, semester.endDate), [semester]);
+  const semWeeks = useMemo(() => weeksBetween(semester.startDate, semester.endDate), [semester]);
   const { data: progress } = useLoad(() => api.getSemesterProgress(semester.id), [semester.id]);
   const byWeek = useMemo(() => new Map((progress ?? []).map((p) => [p.weekStart, p])), [progress]);
+  const weeks = useMemo(() => (progress && progress.length >= semWeeks.length ? progress.map((p) => p.weekStart) : semWeeks), [progress, semWeeks]);
+  const studyWeeks = useMemo(() => (progress ?? []).filter((p) => p.study).map((p) => p.weekStart), [progress]);
+  /** "Week 3" in the semester, "Study week 2" after it. */
+  const weekLabel = (w: ISODate) => {
+    const i = semWeeks.indexOf(w);
+    return i >= 0 ? `Week ${i + 1}` : `Study week ${studyWeeks.indexOf(w) + 1}`;
+  };
   const index = weeks.indexOf(weekStart);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -85,27 +95,29 @@ export function WeekPicker({ semester, weekStart, onChange }: { semester: Semest
         aria-expanded={open}
         title="Jump to semester week"
       >
-        <span>{index >= 0 ? `Week ${index + 1} · ${formatDate(weekStart)}` : 'Jump to week…'}</span>
+        <span>{index >= 0 ? `${weekLabel(weekStart)} · ${formatDate(weekStart)}` : 'Jump to week…'}</span>
         <ChevronDown size={14} />
       </button>
       {open && (
         <div className="week-list" role="listbox" ref={listRef}>
           {weeks.map((w, i) => {
             const p = byWeek.get(w);
+            const after = w > semester.endDate;
             const status = p ? weekStatus(p) : null;
             return (
               <div
                 key={w}
                 role="option"
                 aria-selected={w === weekStart}
-                className={`week-option ${w === weekStart ? 'selected' : ''} ${i === active ? 'active' : ''}`}
+                className={`week-option ${w === weekStart ? 'selected' : ''} ${i === active ? 'active' : ''} ${after ? 'study-week' : ''} ${after && i > 0 && weeks[i - 1] <= semester.endDate ? 'study-first' : ''}`}
                 onMouseEnter={() => setActive(i)}
                 onClick={() => choose(w)}
                 title={statusTitle(p)}
               >
                 <span>
-                  Week {i + 1} · {formatDate(w)}
+                  {weekLabel(w)} · {formatDate(w)}
                   {p && p.breaks.length > 0 && <span className="week-break"> · {p.breaks.join(', ')}</span>}
+                  {p?.study && !after && <span className="week-study"> · Exam study</span>}
                 </span>
                 <span className={`week-status ${status ? `status-${status}` : ''}`}>{status && <StatusIcon status={status} size={14} />}</span>
               </div>

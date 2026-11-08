@@ -62,7 +62,7 @@ export function OutstandingView({
     const dueLimit = addDays(today, 7);
     return {
       overdue: items.filter((i) => i.kind === 'exercise' && i.overdue).length,
-      exercises: items.filter((i) => i.kind === 'exercise' && (i.exercise.plannedDate <= today || (i.exercise.deadlineDate !== null && i.exercise.deadlineDate <= dueLimit))).length,
+      exercises: items.filter((i) => i.kind === 'exercise' && ((i.exercise.plannedDate !== null && i.exercise.plannedDate <= today) || (i.exercise.deadlineDate !== null && i.exercise.deadlineDate <= dueLimit))).length,
       lectures: items.filter((i) => i.kind === 'lecture').length,
     };
   }, [items, today]);
@@ -175,7 +175,7 @@ export function OutstandingView({
                       <span className="kind-tag">{s?.personal ? 'Task' : 'Exercise'}</span> {e.title}
                     </div>
                     <div className="out-meta">
-                      <span className="subject-dot" /> {s?.name} · planned{' '}
+                      <span className="subject-dot" /> {s?.name} · {e.plannedDates.length === 0 ? 'deadline only' : 'planned '}
                       {e.plannedDates
                         .slice(0, 3)
                         .map((d) => formatDate(d, { weekday: true }))
@@ -207,7 +207,7 @@ export function OutstandingView({
                   ) : (
                     <span className="badge">Due in {plural(left, 'day')}</span>
                   )}
-                  <button className="icon-btn" onClick={() => showWeek(startOfWeek(e.plannedDate))} title="Show in timetable">
+                  <button className="icon-btn" onClick={() => showWeek(startOfWeek(item.date))} title="Show in timetable">
                     <Calendar size={15} />
                   </button>
                 </div>

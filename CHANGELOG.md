@@ -2,6 +2,11 @@
 
 Versions follow [semantic versioning](https://semver.org): **major** for changes you have to act on yourself or that remove features, **minor** for new features and visible UI changes (including automatic database migrations), **patch** for bug fixes and small tweaks.
 
+## 2.1.0 — 2026-11-08
+- **Exam study period.** Once the lectures are over, the timetable marks the time until your last exam: every day from the day after the last lecture until the last exam gets a violet tint and an "Exam study" label, so those weeks look different from the semester and from the crossed-out weeks after it. The week's title says which study week it is ("Exam study week 2 of 8"), the week picker lists the study weeks after the semester, and the Today page tells you when you're in it. It's worked out automatically from your lectures and exams and updates when they change. Plan your revision there like in any other week.
+- **Deadlines without work sessions.** An exercise or task can now have only a deadline, for things like signing up for something, where there's nothing to plan time for. In the exercise window, set a deadline and remove all planned days, or double-click empty space in the timetable's "Due" row to create one on that day. It only shows on its deadline; click its flag once it's dealt with.
+- Development: the demo data has a deadline-only exercise and task; tests for both features and the database upgrade.
+
 ## 2.0.0 — 2026-11-06
 - **Themes.** Choose how Study Planner looks in **Settings → Appearance**: **Paper**, a warm light theme like a notebook page; **Slate**, the blue-grey dark look you know (still the default); or **Obsidian**, near-black and calm, where only your subjects bring colour. The app opens in your theme straight away, title bar included.
 

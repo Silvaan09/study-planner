@@ -1200,3 +1200,143 @@ describe('schema v8', () => {
     expect(s8.listBreaks(1)).toEqual([]);
   });
 });
+
+describe('exercises with only a deadline', () => {
+  const create = (extra: object = {}) =>
+    svc.createExercise({ subjectId: math.id, title: 'Register for exams', description: '', plannedDates: [], deadlineDate: '2026-10-16', ...extra });
+
+  it('have no sessions, show only on the deadline, and are settled by handing them in', () => {
+    const [e] = create();
+    expect(e).toMatchObject({ plannedDate: null, plannedDates: [], sessions: [], status: 'not_started', handedIn: false });
+    const week = svc.getWeek(sem.id, '2026-10-12');
+    expect(week.exercises.map((x) => x.id)).toEqual([e.id]);
+    // Nothing to work on, so nothing counts towards the week's progress or the streak.
+    expect(weekProgress(week)).toMatchObject({ exercises: 0, exercisesDone: 0 });
+    expect(svc.getToday(sem.id, '2026-10-12').dueSoon.map((x) => x.id)).toEqual([e.id]);
+    expect(svc.getToday(sem.id, '2026-10-12').planned).toEqual([]);
+    const out = svc.getOutstanding(sem.id, '2026-10-20');
+    expect(out.items).toEqual([expect.objectContaining({ kind: 'exercise', date: '2026-10-16', overdue: true })]);
+    svc.setExerciseHandedIn(e.id, true);
+    expect(svc.getExercise(e.id)).toMatchObject({ status: 'completed', handedIn: true, sessions: [] });
+    expect(svc.getOutstanding(sem.id, '2026-10-20').items).toEqual([]);
+  });
+
+  it('never become done by themselves, but through their checklist', () => {
+    const [e] = create({ checklist: [{ text: 'Fill in the form', done: false }] });
+    expect(svc.getExercise(e.id).status).toBe('not_started');
+    expect(svc.setChecklistItemDone(e.checklist[0].id, true).status).toBe('completed');
+  });
+
+  it('need a deadline: removing it, or all planned days of an exercise without one, is refused', () => {
+    expect(() => create({ deadlineDate: null })).toThrow(/planned day|deadline/);
+    const [e] = create();
+    expect(() => svc.updateExercise({ id: e.id, scope: 'this', changes: { deadlineDate: null } })).toThrow(UserError);
+    const [r] = svc.createExercise({ subjectId: math.id, title: 'Reading', description: '', plannedDates: ['2026-09-22'], deadlineDate: null });
+    expect(() => svc.updateExercise({ id: r.id, scope: 'this', changes: { plannedDates: [] } })).toThrow(UserError);
+    // Planning a day later turns it into an ordinary exercise; removing every day makes it deadline-only again.
+    svc.updateExercise({ id: e.id, scope: 'this', changes: { plannedDates: ['2026-10-14'] } });
+    expect(svc.getExercise(e.id)).toMatchObject({ plannedDate: '2026-10-14', sessions: [{ date: '2026-10-14', status: 'not_started' }] });
+    svc.updateExercise({ id: e.id, scope: 'this', changes: { plannedDates: [] } });
+    expect(svc.getExercise(e.id)).toMatchObject({ plannedDate: null, plannedDates: [], status: 'not_started' });
+  });
+
+  it('can recur, and series edits can drop the planned days of every occurrence', () => {
+    const list = create({ recurrence: { intervalWeeks: 1, count: 3, firstNumber: 1 } });
+    expect(list.map((x) => [x.deadlineDate, x.plannedDates])).toEqual([
+      ['2026-10-16', []],
+      ['2026-10-23', []],
+      ['2026-10-30', []],
+    ]);
+    const [s] = svc.createExercise({
+      subjectId: math.id,
+      title: 'Sheet',
+      description: '',
+      plannedDates: ['2026-09-15'],
+      deadlineDate: '2026-09-18',
+      recurrence: { intervalWeeks: 1, count: 2, firstNumber: 1 },
+    });
+    svc.updateExercise({ id: s.id, scope: 'all', changes: { plannedDates: [] } });
+    const all = svc.subjectOverview(sem.id)[0].exercises.filter((x) => x.seriesId === s.seriesId);
+    expect(all.map((x) => x.plannedDates)).toEqual([[], []]);
+    // Then the deadline can't be removed from the series.
+    expect(() => svc.updateExercise({ id: s.id, scope: 'all', changes: { deadlineDate: null } })).toThrow(/without a planned day or a deadline/);
+  });
+
+  it('can be deleted and restored', () => {
+    const [e] = create();
+    const { trashId } = svc.deleteExercise(e.id, 'this');
+    svc.restoreTrash(trashId);
+    expect(svc.getExercise(e.id).deadlineDate).toBe('2026-10-16');
+  });
+});
+
+describe('exam study period', () => {
+  it('runs from the day after the last lecture until the last exam', () => {
+    // No exams: none.
+    expect(svc.getWeek(sem.id, '2026-12-14').studyPeriod).toBeNull();
+    // Without lectures it starts after the semester's end.
+    svc.createExam({ subjectId: math.id, kind: 'final', title: '', date: '2027-01-20', startTime: null, endTime: null, location: '', notes: '' });
+    expect(svc.getWeek(sem.id, '2026-12-14').studyPeriod).toEqual({ startDate: '2026-12-19', endDate: '2027-01-20' });
+    // Lectures ending early (Wednesdays until 2 Dec) start it earlier; a deleted last week moves it back further.
+    const l = svc.createLecture({ subjectId: math.id, title: 'LA', weekday: 3, startTime: '10:00', endTime: '12:00', endDate: '2026-12-02' });
+    expect(svc.getToday(sem.id, '2026-11-01').studyPeriod).toEqual({ startDate: '2026-12-03', endDate: '2027-01-20' });
+    svc.deleteLecture(l.id, 'this', '2026-11-30');
+    expect(svc.getWeek(sem.id, '2026-11-30').studyPeriod).toEqual({ startDate: '2026-11-26', endDate: '2027-01-20' });
+    // The week picker covers its weeks too.
+    const weeks = svc.getSemesterProgress(sem.id);
+    expect(weeks.at(-1)).toMatchObject({ weekStart: '2027-01-18', study: true });
+    expect(weeks.filter((w) => w.study).map((w) => w.weekStart)[0]).toBe('2026-11-23');
+    expect(weeks.find((w) => w.weekStart === '2026-11-16')!.study).toBe(false);
+  });
+
+  it('is left out when the last exam is before the end of the lectures', () => {
+    svc.createLecture({ subjectId: math.id, title: 'LA', weekday: 1, startTime: '10:00', endTime: '12:00' });
+    svc.createExam({ subjectId: math.id, kind: 'midterm', title: '', date: '2026-11-04', startTime: null, endTime: null, location: '', notes: '' });
+    expect(svc.getWeek(sem.id, '2026-11-02').studyPeriod).toBeNull();
+    expect(svc.getSemesterProgress(sem.id).some((w) => w.study)).toBe(false);
+    expect(svc.getSemesterProgress(sem.id).at(-1)!.weekStart).toBe('2026-12-14');
+  });
+});
+
+describe('schema v9', () => {
+  it('keeps every exercise, lets one have only a deadline and still cascades', async () => {
+    close();
+    const { migrations } = await import('../src/main/db/migrations');
+    const dir8 = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-v8-'));
+    const v8 = openDatabase(dir8, { migrations: migrations.slice(0, 8) });
+    const t = '2026-01-01T00:00:00.000Z';
+    v8.db.exec(`INSERT INTO semesters (id, name, start_date, end_date, created_at, updated_at) VALUES (1, 'S', '2026-09-14', '2026-12-18', '${t}', '${t}');
+      INSERT INTO subjects (id, semester_id, name, color, created_at, updated_at) VALUES (1, 1, 'M', '#3366ff', '${t}', '${t}');
+      INSERT INTO exercise_series (id, subject_id, base_title, interval_weeks, next_number, created_at, updated_at) VALUES (3, 1, 'Set', 1, 2, '${t}', '${t}');
+      INSERT INTO exercises (id, subject_id, series_id, sequence_number, title, planned_date, deadline_date, status, handed_in, overrides, created_at, updated_at) VALUES
+        (7, 1, 3, 1, 'Set 01', '2026-09-16', '2026-09-18', 'completed', 1, '["title"]', '${t}', '${t}'),
+        (8, 1, NULL, NULL, 'Reading', '2026-09-17', NULL, 'in_progress', 0, '[]', '${t}', '${t}');
+      INSERT INTO exercise_plan_dates (exercise_id, date, status) VALUES (7, '2026-09-16', 'completed'), (7, '2026-09-17', 'completed'), (8, '2026-09-17', 'in_progress');
+      INSERT INTO exercise_checklist_items (exercise_id, position, text, done) VALUES (7, 0, 'Step', 1);`);
+    v8.db.close();
+    const v9 = openDatabase(dir8);
+    close = () => {
+      v9.db.close();
+      fs.rmSync(dir8, { recursive: true, force: true });
+    };
+    expect(v9.schemaVersion).toBe(migrations.length);
+    expect(v9.backupsCreated).toHaveLength(1);
+    const s9 = new StudyService(v9.db);
+    expect(s9.getExercise(7)).toMatchObject({
+      seriesId: 3,
+      plannedDates: ['2026-09-16', '2026-09-17'],
+      deadlineDate: '2026-09-18',
+      status: 'completed',
+      handedIn: true,
+      overrides: ['title'],
+      checklist: [{ text: 'Step', done: true }],
+    });
+    expect(s9.getExercise(8)).toMatchObject({ plannedDates: ['2026-09-17'], deadlineDate: null, status: 'in_progress' });
+    s9.updateExercise({ id: 7, scope: 'this', changes: { plannedDates: [] } });
+    expect(s9.getExercise(7)).toMatchObject({ plannedDate: null, plannedDates: [] });
+    // The database itself refuses an exercise with neither.
+    expect(() => v9.db.exec('UPDATE exercises SET deadline_date = NULL, handed_in = 0 WHERE id = 7')).toThrow();
+    v9.db.exec('DELETE FROM exercises WHERE id = 7');
+    expect(v9.db.prepare('SELECT count(*) AS n FROM exercise_checklist_items WHERE exercise_id = 7').get()).toEqual({ n: 0 });
+  });
+});

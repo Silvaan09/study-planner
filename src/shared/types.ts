@@ -35,6 +35,14 @@ export function sessionStatus(e: Pick<Exercise, 'sessions' | 'status'>, date: IS
 export function exerciseDueBy(e: Pick<Exercise, 'deadlineDate' | 'plannedDates'>): ISODate {
   return e.deadlineDate ?? e.plannedDates[e.plannedDates.length - 1];
 }
+/** Only a deadline, no days to work on it (e.g. signing up for something). */
+export function deadlineOnly(e: Pick<Exercise, 'plannedDates'>): boolean {
+  return e.plannedDates.length === 0;
+}
+/** The first day the exercise shows up: its first planned day, or (deadline only) its deadline. */
+export function exerciseFirstDay(e: Pick<Exercise, 'deadlineDate' | 'plannedDates'>): ISODate {
+  return e.plannedDates[0] ?? e.deadlineDate!;
+}
 
 /** Scope for edits/deletes of recurring items. */
 export type Scope = 'this' | 'future' | 'all';
@@ -91,6 +99,20 @@ export function breakOn(breaks: SemesterBreak[], date: ISODate): SemesterBreak |
   return breaks.find((b) => b.startDate <= date && date <= b.endDate);
 }
 
+/**
+ * The exam study period of a semester, worked out from its lectures and exams: from the day after the last lecture
+ * (or, without lectures, after the semester's end) until the day of the last exam. Null when no exam comes later.
+ */
+export interface StudyPeriod {
+  startDate: ISODate;
+  endDate: ISODate;
+}
+
+/** Whether `date` lies in the study period. */
+export function inStudyPeriod(p: StudyPeriod | null, date: ISODate): boolean {
+  return p !== null && p.startDate <= date && date <= p.endDate;
+}
+
 /** One concrete weekly occurrence of a lecture. */
 export interface LectureOccurrence {
   lectureId: Id;
@@ -138,9 +160,12 @@ export interface Exercise {
   sequenceNumber: number | null;
   title: string;
   description: string;
-  /** Earliest planned date (same as plannedDates[0]). */
-  plannedDate: ISODate;
-  /** Every day this exercise is planned to be worked on, sorted ascending (at least one). */
+  /** Earliest planned date (same as plannedDates[0]); null when it has only a deadline. */
+  plannedDate: ISODate | null;
+  /**
+   * Every day this exercise is planned to be worked on, sorted ascending. Empty = deadline only (see deadlineOnly):
+   * there is always at least one planned day or a deadline.
+   */
   plannedDates: ISODate[];
   /** The planned days with their own progress, in the same order as plannedDates. */
   sessions: ExerciseSession[];
@@ -204,6 +229,8 @@ export interface SemesterWeekProgress extends WeekProgress {
   weekStart: ISODate;
   /** Titles of the breaks touching this week (see breakTitle). */
   breaks: string[];
+  /** The week overlaps the exam study period. */
+  study: boolean;
 }
 
 export interface WeekData {
@@ -217,6 +244,8 @@ export interface WeekData {
   exams: Exam[];
   /** Breaks overlapping the week (lectures don't take place on their days). */
   breaks: SemesterBreak[];
+  /** The semester's exam study period (also when it doesn't touch this week). */
+  studyPeriod: StudyPeriod | null;
 }
 
 export type OutstandingItem =
@@ -267,6 +296,8 @@ export interface TodayData {
   exams: Exam[];
   /** The break today falls in, if any. */
   todayBreak: SemesterBreak | null;
+  /** The semester's exam study period (see StudyPeriod). */
+  studyPeriod: StudyPeriod | null;
   streak: Streak;
 }
 
@@ -335,9 +366,9 @@ export interface ExerciseCreateInput {
   subjectId: Id;
   title: string;
   description: string;
-  /** Days to work on it. For a recurring exercise, this pattern repeats in every occurrence. */
+  /** Days to work on it. For a recurring exercise, this pattern repeats in every occurrence. Empty = deadline only. */
   plannedDates: ISODate[];
-  /** null = no deadline. */
+  /** null = no deadline (then at least one planned day is needed). */
   deadlineDate: ISODate | null;
   status?: ExerciseStatus;
   /** Ignored without a deadline. Requires status 'completed' (or none: then it is set). Recurring: first occurrence only, like status. */
@@ -472,7 +503,7 @@ export interface StudyApi {
 
   getWeek(semesterId: Id, weekStart: ISODate): WeekData;
   getOutstanding(semesterId: Id, today: ISODate): Outstanding;
-  /** Progress of every week of the semester, in order (for the week picker). */
+  /** Progress of every week of the semester and of its exam study period, in order (for the week picker). */
   getSemesterProgress(semesterId: Id): SemesterWeekProgress[];
   getToday(semesterId: Id, today: ISODate): TodayData;
 

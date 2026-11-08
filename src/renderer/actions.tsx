@@ -33,6 +33,11 @@ export function useWeekCompletion(semesterId: Id) {
  * handing in belongs to the deadline, so finishing the work doesn't tick off the deadline.
  * Both run through useWeekCompletion when something gets checked off.
  */
+/** The weeks finishing an exercise can complete: those of its sessions (deadline only: its deadline's week, for the ding). */
+function workWeeks(e: Exercise): ISODate[] {
+  return e.plannedDates.length > 0 ? exerciseWeeks(e.plannedDates) : [startOfWeek(e.deadlineDate!)];
+}
+
 export function useExerciseProgress(semesterId: Id) {
   const ui = useUi();
   const completing = useWeekCompletion(semesterId);
@@ -44,13 +49,13 @@ export function useExerciseProgress(semesterId: Id) {
   const setStatus = (e: Exercise, status: ExerciseStatus, opts: { toast?: boolean } = {}) =>
     ui.run(async () => {
       const done = status === 'completed' && e.status !== 'completed';
-      await completing(done ? exerciseWeeks(e.plannedDates) : [], () => api.setExerciseStatus(e.id, status));
+      await completing(done ? workWeeks(e) : [], () => api.setExerciseStatus(e.id, status));
       if (done && opts.toast) ui.toast(`"${e.title}" done`, { kind: 'success', action: undo(e) });
     });
 
   const setHandedIn = (e: Exercise, handedIn: boolean) =>
     ui.run(async () => {
-      await completing(handedIn ? exerciseWeeks(e.plannedDates) : [], () => api.setExerciseHandedIn(e.id, handedIn));
+      await completing(handedIn ? workWeeks(e) : [], () => api.setExerciseHandedIn(e.id, handedIn));
       if (handedIn) ui.toast(`"${e.title}" handed in`, { kind: 'success', action: undo(e) });
     });
 

@@ -21,6 +21,7 @@ import {
   breakTitle,
   examTitle,
   exerciseDueBy,
+  exerciseFirstDay,
   exerciseSettled,
   sessionStatus,
   type BreakInput,
@@ -55,6 +56,7 @@ import {
   type TrashEntry,
   type TrashKind,
   type SemesterWeekProgress,
+  type StudyPeriod,
   type TodayData,
   type WeekData,
 } from '../shared/types';
@@ -82,9 +84,9 @@ const PERSONAL_SUBJECT = { name: 'Personal', color: '#64748b' };
 
 const STATUS_RANK: Record<ExerciseStatus, number> = { not_started: 0, in_progress: 1, completed: 2 };
 
-/** The work is done: every session is, or every step of a non-empty checklist is ticked. */
+/** The work is done: every session is (if it has any), or every step of a non-empty checklist is ticked. */
 function workDone(sessions: ExerciseSession[], checklist: { done: boolean }[]): boolean {
-  return sessions.every((s) => s.status === 'completed') || (checklist.length > 0 && checklist.every((c) => c.done));
+  return (sessions.length > 0 && sessions.every((s) => s.status === 'completed')) || (checklist.length > 0 && checklist.every((c) => c.done));
 }
 
 /** Any session or step started or done. */
@@ -260,8 +262,12 @@ export class StudyService {
     return d;
   }
 
-  /** Planned dates must all be on or before the deadline (if there is one). */
+  /** Planned dates must all be on or before the deadline (if there is one); without planned days a deadline is needed. */
   private checkPlanned(planned: ISODate[], deadline: ISODate | null, title?: string): void {
+    if (planned.length === 0) {
+      if (deadline === null) throw new UserError(`Plan at least one day to work on ${title ? `"${title}"` : 'it'}, or set a deadline.`);
+      return;
+    }
     const latest = planned[planned.length - 1];
     if (deadline !== null && latest > deadline) {
       const who = title ? ` for "${title}"` : '';
@@ -276,9 +282,9 @@ export class StudyService {
     return value === null || value === undefined || value === '' ? null : this.date(value, 'Deadline');
   }
 
-  /** Validates, de-duplicates and sorts a list of planned dates. */
+  /** Validates, de-duplicates and sorts a list of planned dates (empty = deadline only, see checkPlanned). */
   private plannedDatesInput(value: unknown): ISODate[] {
-    if (!Array.isArray(value) || value.length === 0) throw new UserError('Plan at least one day to work on the exercise.');
+    if (!Array.isArray(value)) throw new UserError('The planned dates are invalid.');
     if (value.length > 100) throw new UserError('Too many planned dates (at most 100).');
     return [...new Set(value.map((d) => this.date(d, 'Planned date')))].sort();
   }
@@ -744,7 +750,7 @@ export class StudyService {
       }
     }
     return rows.map((r) => {
-      const own = sessions.get(r.id) ?? [{ date: r.planned_date, status: r.status }];
+      const own = sessions.get(r.id) ?? [];
       const plannedDates = own.map((x) => x.date);
       return {
         id: r.id,
@@ -753,7 +759,7 @@ export class StudyService {
         sequenceNumber: r.sequence_number ?? null,
         title: r.title,
         description: r.description,
-        plannedDate: plannedDates[0],
+        plannedDate: plannedDates[0] ?? null,
         plannedDates,
         sessions: own,
         deadlineDate: r.deadline_date ?? null,
@@ -844,7 +850,7 @@ export class StudyService {
       e.sequenceNumber,
       e.title,
       e.description,
-      dates[0],
+      dates[0] ?? null,
       e.deadlineDate,
       status,
       e.handedIn && e.deadlineDate !== null ? 1 : 0,
@@ -968,7 +974,7 @@ export class StudyService {
       e.subjectId,
       e.title,
       e.description,
-      dates[0],
+      dates[0] ?? null,
       e.deadlineDate,
       status,
       e.handedIn && status === 'completed' && e.deadlineDate !== null ? 1 : 0,
@@ -1065,6 +1071,7 @@ export class StudyService {
         return addDays(c.deadlineDate, step * (t.sequenceNumber! - e.sequenceNumber!));
       };
       const invalid: string[] = [];
+      const undated: string[] = [];
       const updates: Exercise[] = [];
       const checklistWrites = new Map<Id, ChecklistItemInput[]>();
       for (const t of targets) {
@@ -1094,7 +1101,14 @@ export class StudyService {
           applyProgress(u, c, steps);
         } else u.status = promoted(u.status, u.sessions, steps);
         if (u.deadlineDate !== null && u.plannedDates[u.plannedDates.length - 1] > u.deadlineDate) invalid.push(u.title);
+        if (u.plannedDates.length === 0 && u.deadlineDate === null) undated.push(u.title);
         updates.push(u);
+      }
+      if (undated.length > 0) {
+        throw new UserError(
+          `This change would leave ${undated.slice(0, 5).join(', ')}${undated.length > 5 ? ` and ${undated.length - 5} more` : ''} ` +
+            'without a planned day or a deadline. Nothing was changed.',
+        );
       }
       if (invalid.length > 0) {
         throw new UserError(
@@ -1193,7 +1207,7 @@ export class StudyService {
         const label = `Exercise "${e.title}"`;
         const when = e.deadlineDate
           ? `Due ${formatDate(e.deadlineDate, { weekday: true, year: true })}`
-          : `Planned ${formatDate(e.plannedDate, { weekday: true, year: true })}`;
+          : `Planned ${formatDate(e.plannedDates[0], { weekday: true, year: true })}`;
         const batch = this.newTrashBatch('exercise', label, when);
         this.run('UPDATE exercises SET deleted_at = ?, trash_batch_id = ? WHERE id = ?', t, batch, id);
         return { trashId: batch, label };
@@ -1354,14 +1368,31 @@ export class StudyService {
       series,
       exams: this.exams(sem.id, { from: ws, to: we }),
       breaks: this.breaksBetween(sem.id, ws, we),
+      studyPeriod: this.studyPeriod(sem),
     };
+  }
+
+  /**
+   * The exam study period: from the day after the last lecture (without lectures: after the semester's end) until
+   * the last exam. Follows the lectures, breaks and exams as they change; null when no exam comes after that.
+   */
+  private studyPeriod(sem: Semester): StudyPeriod | null {
+    const last = this.exams(sem.id).pop();
+    if (!last) return null;
+    const lectures = this.lectureOccurrences(sem, sem.startDate, sem.endDate);
+    const lastLecture = lectures.reduce<ISODate>((max, o) => (o.date > max ? o.date : max), '');
+    const startDate = addDays(lastLecture || sem.endDate, 1);
+    return last.date >= startDate ? { startDate, endDate: last.date } : null;
   }
 
   getSemesterProgress(semesterId: Id): SemesterWeekProgress[] {
     const sem = this.liveSemester(semesterId);
-    return weeksBetween(sem.startDate, sem.endDate).map((w) => {
+    const period = this.studyPeriod(sem);
+    const end = period && period.endDate > sem.endDate ? period.endDate : sem.endDate;
+    return weeksBetween(sem.startDate, end).map((w) => {
       const week = this.getWeek(semesterId, w);
-      return { weekStart: w, ...weekProgress(week), breaks: week.breaks.map(breakTitle) };
+      const study = period !== null && period.startDate <= addDays(w, 6) && w <= period.endDate;
+      return { weekStart: w, ...weekProgress(week), breaks: week.breaks.map(breakTitle), study };
     });
   }
 
@@ -1375,7 +1406,7 @@ export class StudyService {
     const exercises = this.toExercises(
       this.all(`SELECT x.* FROM ${EXERCISE_FROM} WHERE s.semester_id = ? AND ${LIVE_EXERCISE} AND x.handed_in = 0`, sem.id),
     ).filter((e) => !exerciseSettled(e));
-    for (const e of exercises) items.push({ kind: 'exercise', date: e.plannedDate, exercise: e, overdue: exerciseDueBy(e) < t });
+    for (const e of exercises) items.push({ kind: 'exercise', date: exerciseFirstDay(e), exercise: e, overdue: exerciseDueBy(e) < t });
     const key = (i: OutstandingItem) =>
       i.kind === 'lecture' ? `${i.date}|0|${i.occurrence.startTime}|${i.occurrence.title}` : `${i.date}|1|${exerciseDueBy(i.exercise)}|${i.exercise.title}`;
     items.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
@@ -1416,6 +1447,7 @@ export class StudyService {
       missedLectures: lectures.filter((o) => o.date < t && !o.completed).sort(byTime),
       exams: this.exams(sem.id, { from: t }),
       todayBreak: this.breaksBetween(sem.id, t, t)[0] ?? null,
+      studyPeriod: this.studyPeriod(sem),
       streak: computeStreak(tallies, sem.startDate, t),
     };
   }
