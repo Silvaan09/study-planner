@@ -83,6 +83,8 @@ const EXERCISES: DemoExercise[] = [
   { subject: 'chemistry', title: 'Reading: Atomic Structure', plannedDates: ['2026-09-18'], deadlineDate: null },
   { subject: 'chemistry', title: 'Reading: Periodic Table', plannedDates: ['2026-09-25'], deadlineDate: null },
   { subject: 'chemistry', title: 'Reading: Reaction Kinetics', plannedDates: ['2026-10-08', '2026-10-09'], deadlineDate: null },
+  // Deadline only: nothing to work on, only on the "Due" row.
+  { subject: 'physics', title: 'Sign up for a lab group', plannedDates: [], deadlineDate: '2026-09-16' },
   // Personal tasks.
   { subject: 'personal', title: 'Renew bike insurance', plannedDates: ['2026-09-21'], deadlineDate: '2026-09-23' },
   { subject: 'personal', title: 'Call the landlord about the heating', plannedDates: ['2026-09-21'], deadlineDate: null },
@@ -93,6 +95,7 @@ const EXERCISES: DemoExercise[] = [
     deadlineDate: '2026-10-02',
     steps: ['Update CV', 'Write cover letter', 'Send application'],
   },
+  { subject: 'personal', title: 'Register for the exam session', plannedDates: [], deadlineDate: '2026-10-16' },
 ];
 
 // [subject, kind, title, date, start, end, room]
@@ -165,13 +168,14 @@ export function seedDemo(svc: StudyService, today: ISODate): DemoSummary {
       // Handed in (due before today) or done: every step ticked; in progress: the first half.
       // Without a deadline: done once its planned days are past.
       const handedIn = e.deadlineDate !== null && e.deadlineDate < today;
-      const plannedPast = e.plannedDates[e.plannedDates.length - 1] < today;
+      const started = e.plannedDate !== null && e.plannedDate < today;
+      const plannedPast = started && e.plannedDates[e.plannedDates.length - 1] < today;
       const worked = !handedIn && plannedPast && (e.deadlineDate === null || DONE_NOT_HANDED_IN.has(e.title));
-      const done = handedIn || worked ? e.checklist : e.plannedDate < today ? e.checklist.slice(0, Math.ceil(e.checklist.length / 2)) : [];
+      const done = handedIn || worked ? e.checklist : started ? e.checklist.slice(0, Math.ceil(e.checklist.length / 2)) : [];
       for (const step of done) svc.setChecklistItemDone(step.id, true);
       if (handedIn) svc.setExerciseHandedIn(e.id, true);
       else if (worked) svc.setExerciseStatus(e.id, 'completed');
-      else if (e.plannedDate < today) {
+      else if (started) {
         // Started: past sessions done, later ones not started; when every session is past, the last is still in progress.
         for (const d of e.plannedDates) {
           const last = d === e.plannedDates[e.plannedDates.length - 1];

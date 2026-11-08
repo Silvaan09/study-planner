@@ -614,13 +614,18 @@ function normalizeDates(dates: ISODate[]): ISODate[] {
   return [...new Set(dates.filter(isValidISODate))].sort();
 }
 
-/** Editable list of the days an exercise is planned to be worked on. */
+/**
+ * Editable list of the days an exercise is planned to be worked on. With a deadline, every day can be removed: the
+ * exercise then has only its deadline (e.g. a registration).
+ */
 function PlannedDatesField({ dates, deadline, onChange }: { dates: ISODate[]; deadline: ISODate; onChange: (d: ISODate[]) => void }) {
   const first = normalizeDates(dates)[0];
   const weekdayName = first ? WEEKDAY_NAMES[weekday(first) - 1] : null;
+  const hasDeadline = isValidISODate(deadline);
   const addDay = () => {
     const last = normalizeDates(dates).pop();
-    onChange([...dates, last ? addDays(last, 1) : todayISO()]);
+    const today = todayISO();
+    onChange([...dates, last ? addDays(last, 1) : hasDeadline && today > deadline ? deadline : today]);
   };
   const everyWeek = () => {
     const weekly: ISODate[] = [];
@@ -640,16 +645,26 @@ function PlannedDatesField({ dates, deadline, onChange }: { dates: ISODate[]; de
             ]}
             onChange={(v) => onChange(dates.map((x, j) => (j === i ? v : x)))}
           />
-          {dates.length > 1 && (
-            <button type="button" className="icon-btn small" title="Remove this day" onClick={() => onChange(dates.filter((_, j) => j !== i))}>
+          {(dates.length > 1 || hasDeadline) && (
+            <button
+              type="button"
+              className="icon-btn small"
+              title={dates.length > 1 ? 'Remove this day' : 'Remove this day (only the deadline is left)'}
+              onClick={() => onChange(dates.filter((_, j) => j !== i))}
+            >
               <X size={14} />
             </button>
           )}
         </div>
       ))}
+      {dates.length === 0 && (
+        <div className={`planned-none ${hasDeadline ? '' : 'invalid'}`}>
+          {hasDeadline ? 'None: deadline only, nothing to work on.' : 'Plan a day to work on it, or set a deadline.'}
+        </div>
+      )}
       <div className="planned-actions">
         <button type="button" className="btn btn-ghost small" onClick={addDay}>
-          <Plus size={13} /> Add another day
+          <Plus size={13} /> {dates.length === 0 ? 'Plan a day' : 'Add another day'}
         </button>
         {weekdayName && isValidISODate(deadline) && first! <= deadline && (
           <button type="button" className="btn btn-ghost small" onClick={everyWeek} title={`Plan every ${weekdayName} from the first day until the deadline`}>
@@ -771,13 +786,16 @@ export function ExerciseDialog({
   semester: Semester;
   subjects: Subject[];
   exerciseId?: Id;
-  defaults?: { plannedDate?: ISODate; subjectId?: Id };
+  /** deadlineDate alone: a new exercise with only that deadline (no planned days). */
+  defaults?: { plannedDate?: ISODate; deadlineDate?: ISODate; subjectId?: Id };
   close: (ok?: boolean) => void;
 }) {
   const ui = useUi();
   const actions = useActions();
   const isEdit = exerciseId !== undefined;
   const initialPlanned = defaults?.plannedDate ?? todayISO();
+  const deadlineOnlyDefault = defaults?.deadlineDate !== undefined && defaults.plannedDate === undefined;
+  const initialDeadline = defaults?.deadlineDate ?? addDays(initialPlanned, 7);
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [series, setSeries] = useState<ExerciseSeries | null>(null);
   const [scope, setScope] = useState<Scope>('this');
@@ -785,16 +803,16 @@ export function ExerciseDialog({
   const [title, setTitle] = useState('');
   const [seriesTitleText, setSeriesTitleText] = useState('');
   const [description, setDescription] = useState('');
-  const [planned, setPlanned] = useState<ISODate[]>([initialPlanned]);
+  const [planned, setPlanned] = useState<ISODate[]>(deadlineOnlyDefault ? [] : [initialPlanned]);
   // '' = no deadline.
-  const [deadline, setDeadline] = useState<ISODate | ''>(addDays(initialPlanned, 7));
+  const [deadline, setDeadline] = useState<ISODate | ''>(initialDeadline);
   const [stage, setStage] = useState<ExerciseStage>('not_started');
   const status = stage === 'handed_in' ? 'completed' : stage;
   const handedIn = stage === 'handed_in';
   const [steps, setSteps] = useState<DraftStep[]>([]);
   const [repeat, setRepeat] = useState(false);
   const [interval, setIntervalWeeks] = useState(1);
-  const [count, setCount] = useState(() => defaultCount(addDays(initialPlanned, 7), semester.endDate, 1));
+  const [count, setCount] = useState(() => defaultCount(initialDeadline, semester.endDate, 1));
   const [countTouched, setCountTouched] = useState(false);
   const [firstNumber, setFirstNumber] = useState(1);
 
@@ -820,8 +838,9 @@ export function ExerciseDialog({
   const seriesScope = series !== null && scope !== 'this';
   const plannedDates = normalizeDates(planned);
   const latestPlanned = plannedDates[plannedDates.length - 1];
-  const plannedValid = planned.length > 0 && planned.every(isValidISODate);
   const hasDeadline = isValidISODate(deadline);
+  // No planned days = deadline only, which needs a deadline.
+  const plannedValid = (planned.length > 0 || hasDeadline) && planned.every(isValidISODate);
   const dateError = latestPlanned && hasDeadline && latestPlanned > deadline ? "Planned days can't be after the deadline." : null;
   const activeTitle = seriesScope ? seriesTitleText : title;
   // A task: an exercise of the personal subject, i.e. one that belongs to no subject.
@@ -1008,7 +1027,9 @@ export function ExerciseDialog({
       <Field
         label="Status"
         hint={
-          plannedDates.length > 1
+          plannedDates.length === 0 && hasDeadline
+            ? `Nothing planned to work on: hand it in (the flag on its deadline in the timetable) once it's dealt with.`
+            : plannedDates.length > 1
             ? `Of the whole ${noun}: done once every planned day${steps.length ? ' or every checklist step' : ''} is. Each day is checked off on its own in the timetable and on the Today page.`
             : steps.length
               ? `Done once every checklist step is ticked off.`
@@ -1062,7 +1083,7 @@ export function ExerciseDialog({
                   <span key={p.title}>
                     {p.title}{' '}
                     <em>
-                      planned {p.planned}
+                      {p.planned ? `planned ${p.planned}` : 'deadline only'}
                       {p.due && ` · due ${formatDate(p.due, { weekday: true })}`}
                     </em>
                   </span>

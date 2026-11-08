@@ -3,12 +3,12 @@ import { api } from '../api';
 import { useLoad, useNow, useUi } from '../ui';
 import { useChecklistToggle, useExerciseProgress, useWeekCompletion } from '../actions';
 import { diffDays, formatDate, startOfWeek, timeToMinutes, todayISO, weeksBetween, WEEKDAY_NAMES, weekday, MONTH_NAMES, type ISODate } from '../../shared/dates';
-import { breakTitle, EXAM_KIND_LABEL, EXERCISE_STAGE_LABEL, EXERCISE_STATUS_LABEL, examTitle, exerciseDueBy, exerciseStage, sessionStatus, type Exam, type Exercise, type ExerciseStage, type ExerciseStatus, type Id, type LectureOccurrence, type Semester, type Subject } from '../../shared/types';
+import { breakTitle, inStudyPeriod, EXAM_KIND_LABEL, EXERCISE_STAGE_LABEL, EXERCISE_STATUS_LABEL, examTitle, exerciseDueBy, exerciseStage, sessionStatus, type Exam, type Exercise, type ExerciseStage, type ExerciseStatus, type Id, type LectureOccurrence, type Semester, type Subject } from '../../shared/types';
 import { ExamDialog, ExerciseDialog } from '../dialogs';
 import { FocusPill } from '../components/FocusPill';
 import { ChecklistList, ChecklistProgress } from '../components/Checklist';
 import { ExamCountdown, examTime, showsKind } from '../components/ExamRow';
-import { Alert, Calendar, Check, Clock, Flag, Flame, GraduationCap, ListTodo, MapPin, Palm, StatusIcon, Sun } from '../components/Icons';
+import { Alert, BookOpen, Calendar, Check, Clock, Flag, Flame, GraduationCap, ListTodo, MapPin, Palm, StatusIcon, Sun } from '../components/Icons';
 
 const NEXT_STATUS: Record<ExerciseStatus, ExerciseStatus> = { not_started: 'in_progress', in_progress: 'completed', completed: 'not_started' };
 /** Rows about deadlines go one step further: done → handed in (which takes them off the list). */
@@ -72,6 +72,7 @@ export function TodayView({
   const colorOf = (id: Id) => subjectById.get(id)?.color ?? '#888';
   const nameOf = (id: Id) => subjectById.get(id)?.name ?? '';
 
+  const studyToday = inStudyPeriod(data?.studyPeriod ?? null, today);
   const v = useMemo(() => {
     const mine = <T extends { subjectId: Id }>(list: T[] | undefined): T[] => (list ?? []).filter((x) => !focus || x.subjectId === focus.id);
     return {
@@ -305,7 +306,12 @@ export function TodayView({
                     {data.todayBreak.startDate !== data.todayBreak.endDate && ` until ${formatDate(data.todayBreak.endDate, { weekday: true })}`}: no lectures.
                   </p>
                 )}
-                {v.lectures.length === 0 && examsToday.length === 0 && !data?.todayBreak && <p className="card-empty">No lectures today.</p>}
+                {!data?.todayBreak && studyToday && (
+                  <p className="today-study">
+                    <BookOpen size={15} /> Exam study period until {formatDate(data!.studyPeriod!.endDate, { weekday: true })}: no lectures.
+                  </p>
+                )}
+                {v.lectures.length === 0 && examsToday.length === 0 && !data?.todayBreak && !studyToday && <p className="card-empty">No lectures today.</p>}
               </Card>
 
               <Card title="To do today" icon={<ListTodo size={16} />}>

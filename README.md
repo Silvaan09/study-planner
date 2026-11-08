@@ -19,7 +19,8 @@ Windows desktop app · works fully offline · your data stays on your PC
 - **Plan the work, not just the deadline.** Pick the days you'll actually sit down for each exercise and check off every session as you go. Break the big ones into steps. Finishing an exercise and handing it in are separate, so nothing drops off your list before it's submitted. A whole series (`Problem Set 01`, `02`, …) is set up in one go.
 - **Start every day knowing what matters.** The Today page shows what's on right now, what's next, what to get done today and what's coming up this week, with a streak for every day you finish everything.
 - **Nothing slips through.** Missed lectures and unfinished exercises pile up in one Outstanding list until you deal with them, and every exam counts down.
-- **Built around your actual semester.** Courses that start late or end early, autumn breaks and public holidays: lectures only show up when they really take place.
+- **Built around your actual semester.** Courses that start late or end early, autumn breaks and public holidays: lectures only show up when they really take place. After the last lecture, the weeks until your last exam are marked as your exam study period.
+- **Deadlines on their own.** Sign-ups and other things with nothing to work on can have just a deadline.
 - **Zoom in on one subject.** Click a subject and everything else fades out, so you can see where you stand in it.
 - **Light or dark, your choice.** Three themes in Settings: Paper (light), Slate (the default dark) and Obsidian (near-black).
 - **Checking things off feels good.** A soft ding for every lecture and exercise, confetti when your week is done.

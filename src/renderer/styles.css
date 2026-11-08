@@ -30,6 +30,8 @@
   --weekend: #202436;
   --weekend-band: #242940;
   --break: #4fb6c9;
+  /* Exam study period (after the last lecture until the last exam). */
+  --study: #b99bff;
   /* Shadow under the timetable's sticky day headers, dim layer behind dialogs, toasts (dark in every theme). */
   --sticky-shadow: 0 6px 12px -8px rgba(0, 0, 0, 0.6);
   --backdrop: rgba(15, 18, 30, 0.42);
@@ -71,6 +73,7 @@
   --weekend: #f7f3ea;
   --weekend-band: #f1ece1;
   --break: #2a8a8f;
+  --study: #7b4fb8;
   --sticky-shadow: 0 6px 12px -8px rgba(80, 60, 30, 0.2);
   --backdrop: rgba(60, 45, 25, 0.25);
   --toast: #2b2720;
@@ -122,6 +125,7 @@
   --weekend: #0f0f11;
   --weekend-band: #141416;
   --break: #5ec4d6;
+  --study: #c4a8ff;
   --backdrop: rgba(0, 0, 0, 0.55);
   --toast: #1c1c20;
   --radius: 6px;
@@ -1280,6 +1284,18 @@ textarea.input {
 .tt-cell.outside,
 .tt-col.outside {
   background-image: repeating-linear-gradient(135deg, var(--hatch) 0 6px, transparent 6px 12px);
+}
+/* Exam study period: a light violet wash over the day (on top of the weekend tint; breaks and drag feedback win). */
+.tt-day-head.study,
+.tt-cell.study,
+.tt-col.study {
+  background-image: linear-gradient(color-mix(in srgb, var(--study) 7%, transparent), color-mix(in srgb, var(--study) 7%, transparent));
+}
+.tt-day-head.study {
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--study) 55%, transparent);
+}
+.tt-day-head.study.today {
+  box-shadow: inset 0 3px 0 var(--today), inset 0 -2px 0 color-mix(in srgb, var(--study) 55%, transparent);
 }
 
 /* drag & drop feedback */
@@ -2625,6 +2641,14 @@ button.row-item:hover {
   align-items: center;
   gap: 4px;
 }
+.planned-none {
+  font-size: 12.5px;
+  color: var(--text-2);
+  padding: 4px 0 2px;
+}
+.planned-none.invalid {
+  color: var(--danger);
+}
 .planned-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3371,6 +3395,52 @@ button.today-row {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.day-study {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 1px 7px 1px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--study) 16%, transparent);
+  color: var(--study);
+  font-size: 11px;
+  font-weight: 600;
+}
+.day-study svg {
+  flex: none;
+}
+.day-study span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.key-study {
+  background: color-mix(in srgb, var(--study) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--study) 60%, var(--border));
+}
+.week-study {
+  color: var(--study);
+}
+.today-study {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0;
+  color: var(--study);
+  font-weight: 600;
+}
+/* Week picker: the weeks after the semester (exam study period), below a line. */
+.week-option.study-week {
+  color: var(--study);
+}
+.week-option.study-week.selected {
+  color: var(--study);
+}
+.week-option.study-first {
+  border-top: 1px solid var(--border);
 }
 .key-break {
   background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--break) 45%, transparent) 0 3px, transparent 3px 6px);

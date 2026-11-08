@@ -82,7 +82,18 @@ describe('demo data (npm run seed-demo)', () => {
       ['Call the landlord about the heating', 'completed', false],
       ['Renew bike insurance', 'completed', true],
       ['Apply for student job', 'not_started', false],
+      ['Register for the exam session', 'not_started', false],
     ]);
+    // Deadline only: no sessions; the past one is handed in, the upcoming one is outstanding.
+    const signUp = overview[3].exercises.find((e) => e.title === 'Sign up for a lab group')!;
+    expect([signUp.plannedDates, signUp.handedIn]).toEqual([[], true]);
+    expect(out.items.some((i) => i.kind === 'exercise' && i.exercise.title === 'Register for the exam session' && i.date === '2026-10-16')).toBe(true);
+
+    // Exam study period: from the day after the last lecture (Fri 18 Dec) until the last exam (1 Feb).
+    expect(todayData.studyPeriod).toEqual({ startDate: '2026-12-19', endDate: '2027-02-01' });
+    const weeks = svc.getSemesterProgress(semesterId);
+    expect(weeks.at(-1)!.weekStart).toBe('2027-02-01');
+    expect(weeks.filter((w) => w.study).map((w) => w.weekStart)[0]).toBe('2026-12-14');
   });
 
   it('can be seeded late in the semester, across the break', () => {
