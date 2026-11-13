@@ -37,3 +37,12 @@
   !define MUI_FINISHPAGE_RUN_FUNCTION "StartApp"
   !insertmacro MUI_PAGE_FINISH
 !macroend
+
+!macro customUnInstall
+  ; A real uninstall removes "Start with Windows" (the login item app.setLoginItemSettings writes under the app's
+  ; AppUserModelId). Updates run the old uninstaller with --updated and must keep it.
+  ${ifNot} ${isUpdated}
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "ch.silvanmeier.studyplanner"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "ch.silvanmeier.studyplanner"
+  ${endIf}
+!macroend

@@ -346,6 +346,20 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 10,
+    name: 'subject credits and results',
+    up(db) {
+      // Credits and a result per subject: a Swiss grade (1–6) or pass/fail, chosen per subject ('grade' by default).
+      // New columns only; existing subjects get 'grade' with no credits and no result.
+      db.exec(`
+        ALTER TABLE subjects ADD COLUMN assessment TEXT NOT NULL DEFAULT 'grade' CHECK (assessment IN ('grade', 'pass_fail'));
+        ALTER TABLE subjects ADD COLUMN credits REAL CHECK (credits IS NULL OR credits >= 0);
+        ALTER TABLE subjects ADD COLUMN grade REAL CHECK (grade IS NULL OR (grade >= 1 AND grade <= 6));
+        ALTER TABLE subjects ADD COLUMN passed INTEGER CHECK (passed IS NULL OR passed IN (0, 1));
+      `);
+    },
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = migrations[migrations.length - 1].version;

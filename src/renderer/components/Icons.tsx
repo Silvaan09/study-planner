@@ -204,6 +204,32 @@ export const Palm = (p: P) => (
     <path d="M11 15.5c.5 2.5-.17 4.5-1 6.5h4c2-5.5-.5-12-1-14" />
   </Svg>
 );
+/** Start with Windows. */
+export const Power = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 2v10" />
+    <path d="M18.4 6.6a9 9 0 1 1-12.77.04" />
+  </Svg>
+);
+export const ArrowLeft = (p: P) => (
+  <Svg {...p}>
+    <path d="m12 19-7-7 7-7M19 12H5" />
+  </Svg>
+);
+/** Semesters page. */
+export const Layers = (p: P) => (
+  <Svg {...p}>
+    <path d="m12 2 10 5-10 5L2 7Z" />
+    <path d="m2 12 10 5 10-5M2 17l10 5 10-5" />
+  </Svg>
+);
+/** Credits and grades. */
+export const Award = (p: P) => (
+  <Svg {...p}>
+    <circle cx="12" cy="8" r="6" />
+    <path d="M15.48 12.89 17 22l-5-3-5 3 1.52-9.11" />
+  </Svg>
+);
 
 /** Exercise status glyph: empty ring, half-filled, checked (done), flag (handed in). */
 export function StatusIcon({ status, size = 16 }: { status: 'not_started' | 'in_progress' | 'completed' | 'handed_in'; size?: number }) {

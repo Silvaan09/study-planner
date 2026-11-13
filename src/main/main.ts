@@ -2,12 +2,13 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell } from 'electr
 import fs from 'node:fs';
 import path from 'node:path';
 import { backupTo, NewerDatabaseError, openDatabase, type OpenedDatabase } from './db/database';
+import { BackupError, backupPath, listBackups, restoreDatabase } from './db/backups';
 import { StudyService, UserError } from './service';
 import { parseWindowState, type WindowState } from './windowState';
 import { checkForUpdates, getUpdateStatus, initUpdater, installUpdate } from './updater';
 import { getReleaseNotes, getWhatsNew, markWhatsNewSeen } from './whatsNew';
 import { applyNativeTheme, getTheme, setTheme, windowBackground } from './theme';
-import type { ApiMethod, ApiResponse, AppInfo } from '../shared/types';
+import type { ApiMethod, ApiResponse, AppInfo, AutostartState } from '../shared/types';
 
 const APP_FOLDER = 'StudyPlanner';
 
@@ -27,6 +28,10 @@ app.setPath('userData', path.join(dataDir, 'app-state'));
 app.setAppUserModelId('ch.silvanmeier.studyplanner');
 // en-GB: date pickers use day/month order, Monday-first calendars and 24-hour time.
 app.commandLine.appendSwitch('lang', 'en-GB');
+
+/** Windows starts the app with this argument when "Start with Windows" is on; it then opens minimized. */
+const AUTOSTART_ARG = '--autostart';
+const launchedAtLogin = process.argv.includes(AUTOSTART_ARG);
 
 let opened: OpenedDatabase | null = null;
 let service: StudyService | null = null;
@@ -48,11 +53,53 @@ function appInfo(): AppInfo {
   };
 }
 
+/** Swaps in a backup, then the renderer reloads. On failure the previous data stays (or is put back). */
+function restoreFrom(source: string): void {
+  const before = opened;
+  try {
+    opened = restoreDatabase(opened!, dataDir, source).opened;
+  } catch (err) {
+    if (err instanceof BackupError && err.reopened) opened = err.reopened;
+    throw err;
+  } finally {
+    if (opened !== before) service = new StudyService(opened!.db);
+  }
+}
+
+async function restoreBackupFromFile(): Promise<boolean> {
+  const options: Electron.OpenDialogOptions = {
+    title: 'Restore a backup',
+    defaultPath: opened!.backupDir,
+    filters: [{ name: 'Study Planner database', extensions: ['db'] }],
+    properties: ['openFile'],
+  };
+  const picked = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+  if (picked.canceled || picked.filePaths.length === 0) return false;
+  restoreFrom(picked.filePaths[0]);
+  return true;
+}
+
+/** "Start with Windows" is a login item (registry Run key); only for the installed app. */
+function getAutostart(): AutostartState {
+  if (!app.isPackaged) return { available: false, enabled: false };
+  return { available: true, enabled: app.getLoginItemSettings({ args: [AUTOSTART_ARG] }).openAtLogin };
+}
+
+function setAutostart(enabled: unknown): AutostartState {
+  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled === true, args: [AUTOSTART_ARG] });
+  return getAutostart();
+}
+
 // Methods implemented outside the service (need Electron APIs).
 const appMethods: Partial<Record<ApiMethod, (...args: any[]) => unknown>> = {
   appInfo,
   createBackup: () => backupTo(opened!.db, opened!.backupDir, 'manual'),
   openDataFolder: () => void shell.openPath(dataDir),
+  listBackups: () => listBackups(opened!.backupDir),
+  restoreBackup: (file: unknown) => restoreFrom(backupPath(opened!.backupDir, file)),
+  restoreBackupFromFile,
+  getAutostart,
+  setAutostart,
   getUpdateStatus,
   checkForUpdates,
   installUpdate,
@@ -69,7 +116,7 @@ const appMethods: Partial<Record<ApiMethod, (...args: any[]) => unknown>> = {
 
 // Service methods callable from the UI. Anything not listed here is rejected.
 const serviceMethods: ApiMethod[] = [
-  'listSemesters', 'createSemester', 'updateSemester', 'deleteSemester',
+  'listSemesters', 'createSemester', 'updateSemester', 'deleteSemester', 'listSemesterOverview', 'getSemesterActivity',
   'listSubjects', 'subjectOverview', 'createSubject', 'updateSubject', 'deleteSubject',
   'createLecture', 'updateLecture', 'getLecture', 'deleteLecture', 'setLectureCompleted',
   'getExercise', 'getSeries', 'createExercise', 'updateExercise', 'setExerciseStatus', 'setExerciseHandedIn', 'setSessionStatus', 'moveExercise',
@@ -90,7 +137,7 @@ function registerIpc(): void {
       else throw new Error(`Unknown API method: ${String(method)}`);
       return { ok: true, value };
     } catch (err) {
-      const userError = err instanceof UserError;
+      const userError = err instanceof UserError || err instanceof BackupError;
       if (!userError) console.error(`[api] ${method} failed:`, err);
       return { ok: false, error: err instanceof Error ? err.message : String(err), userError };
     }
@@ -156,6 +203,17 @@ function createWindow(): void {
   mainWindow.once('ready-to-show', () => {
     if (!mainWindow) return;
     if (!state.bounds) rememberBounds();
+    if (launchedAtLogin) {
+      // Started by Windows: wait in the taskbar. Maximizing now would show the window, so that waits until it's opened.
+      if (saved.fullScreen || saved.maximized) {
+        mainWindow.once('restore', () => {
+          if (saved.fullScreen) mainWindow?.setFullScreen(true);
+          else mainWindow?.maximize();
+        });
+      }
+      mainWindow.minimize();
+      return;
+    }
     if (saved.fullScreen) mainWindow.setFullScreen(true);
     else if (saved.maximized) mainWindow.maximize();
     mainWindow.show();

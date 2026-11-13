@@ -1339,3 +1339,122 @@ describe('schema v9', () => {
     expect(v9.db.prepare('SELECT count(*) AS n FROM exercise_checklist_items WHERE exercise_id = 7').get()).toEqual({ n: 0 });
   });
 });
+
+describe('subject credits and results', () => {
+  it('stores a grade with two decimals, credits with decimals, and keeps them on a plain rename', () => {
+    const s = svc.createSubject({ semesterId: sem.id, name: 'Physics', color: '#ff0000', credits: 7.5, grade: 4.12 });
+    expect(s).toMatchObject({ assessment: 'grade', credits: 7.5, grade: 4.12, passed: null });
+    // Callers that only send name and colour leave the result alone.
+    expect(svc.updateSubject(s.id, { semesterId: sem.id, name: 'Physics I', color: '#ff0000' })).toMatchObject({ credits: 7.5, grade: 4.12 });
+    expect(svc.updateSubject(s.id, { semesterId: sem.id, name: 'Physics I', color: '#ff0000', grade: null })).toMatchObject({ grade: null, credits: 7.5 });
+    expect(math).toMatchObject({ assessment: 'grade', credits: null, grade: null, passed: null });
+  });
+
+  it('refuses grades outside 1-6, more than two decimals and negative credits', () => {
+    const base = { semesterId: sem.id, name: 'X', color: '#ff0000' };
+    expect(() => svc.createSubject({ ...base, grade: 6.5 })).toThrow(UserError);
+    expect(() => svc.createSubject({ ...base, grade: 0.5 })).toThrow(UserError);
+    expect(() => svc.createSubject({ ...base, grade: 4.125 })).toThrow(/two decimals/);
+    expect(() => svc.createSubject({ ...base, credits: -1 })).toThrow(UserError);
+    expect(() => svc.createSubject({ ...base, credits: Number.NaN })).toThrow(UserError);
+    expect(svc.createSubject({ ...base, grade: 6, credits: 0 })).toMatchObject({ grade: 6, credits: 0 });
+  });
+
+  it('pass/fail subjects have no grade; switching the kind clears the other result', () => {
+    const s = svc.createSubject({ semesterId: sem.id, name: 'Lab', color: '#ff0000', assessment: 'pass_fail', credits: 3, passed: true, grade: 5 });
+    expect(s).toMatchObject({ assessment: 'pass_fail', grade: null, passed: true });
+    const g = svc.updateSubject(s.id, { semesterId: sem.id, name: 'Lab', color: '#ff0000', assessment: 'grade' });
+    expect(g).toMatchObject({ assessment: 'grade', grade: null, passed: null, credits: 3 });
+    const back = svc.updateSubject(s.id, { semesterId: sem.id, name: 'Lab', color: '#ff0000', grade: 5.5 });
+    expect(back).toMatchObject({ grade: 5.5 });
+    expect(svc.updateSubject(back.id, { semesterId: sem.id, name: 'Lab', color: '#ff0000', assessment: 'pass_fail' })).toMatchObject({
+      grade: null,
+      passed: null,
+    });
+  });
+
+  it('the personal subject never gets credits or a result', () => {
+    const personal = svc.listSubjects(sem.id).find((s) => s.personal)!;
+    expect(svc.updateSubject(personal.id, { semesterId: sem.id, name: 'Me', color: '#64748b', credits: 5, grade: 6 })).toMatchObject({
+      name: 'Me',
+      credits: null,
+      grade: null,
+    });
+  });
+});
+
+describe('semester overview and activity', () => {
+  const exam = (date: string) => ({ subjectId: math.id, kind: 'final' as const, title: '', date, startTime: null, endTime: null, location: '', notes: '' });
+
+  it('lists every semester with its study period and its subjects without the personal one', () => {
+    const spring = svc.createSemester({ name: 'Spring 2027', startDate: '2027-02-15', endDate: '2027-05-28' });
+    svc.createExam(exam('2027-01-20'));
+    const list = svc.listSemesterOverview();
+    expect(list.map((o) => o.semester.name)).toEqual(['Spring 2027', 'Autumn 2026']);
+    expect(list[1].studyPeriod).toEqual({ startDate: '2026-12-21', endDate: '2027-01-20' });
+    expect(list[1].subjects.map((s) => s.name)).toEqual(['Mathematics']);
+    expect(list[0]).toMatchObject({ semester: { id: spring.id }, studyPeriod: null, subjects: [] });
+  });
+
+  it('counts lectures and sessions per subject and day, without personal tasks', () => {
+    const physics = svc.createSubject({ semesterId: sem.id, name: 'Physics', color: '#ff0000' });
+    const personal = svc.listSubjects(sem.id).find((s) => s.personal)!;
+    const lecture = svc.createLecture({ subjectId: math.id, title: 'LA', weekday: 1, startTime: '10:00', endTime: '12:00' });
+    svc.setLectureCompleted(lecture.id, '2026-09-14', true);
+    const [ex] = svc.createExercise({ subjectId: physics.id, title: 'Sheet', description: '', plannedDates: ['2026-09-14', '2026-09-15'], deadlineDate: '2026-09-18' });
+    svc.setSessionStatus(ex.id, '2026-09-15', 'completed');
+    svc.createExercise({ subjectId: personal.id, title: 'Laundry', description: '', plannedDates: ['2026-09-14'], deadlineDate: null });
+
+    const days = svc.getSemesterActivity(sem.id);
+    expect(days[0].date).toBe('2026-09-14');
+    expect(days[days.length - 1].date).toBe('2026-12-18');
+    expect(days).toHaveLength(96);
+    const byDate = new Map(days.map((d) => [d.date, d.subjects]));
+    expect(byDate.get('2026-09-14')).toEqual(
+      expect.arrayContaining([
+        { subjectId: math.id, done: 1, total: 1 },
+        { subjectId: physics.id, done: 0, total: 1 },
+      ]),
+    );
+    expect(byDate.get('2026-09-14')).toHaveLength(2);
+    expect(byDate.get('2026-09-15')).toEqual([{ subjectId: physics.id, done: 1, total: 1 }]);
+    expect(byDate.get('2026-09-16')).toEqual([]);
+    expect(byDate.get('2026-09-21')).toEqual([{ subjectId: math.id, done: 0, total: 1 }]);
+  });
+
+  it('runs to the end of the exam study period', () => {
+    svc.createExam(exam('2027-01-20'));
+    const days = svc.getSemesterActivity(sem.id);
+    expect(days[days.length - 1].date).toBe('2027-01-20');
+  });
+});
+
+describe('schema v10', () => {
+  it('gives existing subjects a grade assessment without credits or result', async () => {
+    close();
+    const { migrations } = await import('../src/main/db/migrations');
+    const dir9 = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-v9-'));
+    const v9 = openDatabase(dir9, { migrations: migrations.slice(0, 9) });
+    const t = '2026-01-01T00:00:00.000Z';
+    v9.db.exec(`INSERT INTO semesters (id, name, start_date, end_date, created_at, updated_at) VALUES (1, 'S', '2026-09-14', '2026-12-18', '${t}', '${t}');
+      INSERT INTO subjects (id, semester_id, name, color, personal, created_at, updated_at) VALUES (1, 1, 'M', '#3366ff', 0, '${t}', '${t}'), (2, 1, 'Personal', '#64748b', 1, '${t}', '${t}');
+      INSERT INTO lectures (id, subject_id, title, weekday, start_time, end_time, created_at, updated_at) VALUES (5, 1, 'LA', 1, '10:00', '12:00', '${t}', '${t}');`);
+    v9.db.close();
+    const v10 = openDatabase(dir9);
+    close = () => {
+      v10.db.close();
+      fs.rmSync(dir9, { recursive: true, force: true });
+    };
+    expect(v10.schemaVersion).toBe(migrations.length);
+    expect(v10.backupsCreated).toHaveLength(1);
+    const s10 = new StudyService(v10.db);
+    expect(s10.listSubjects(1)).toEqual([
+      expect.objectContaining({ id: 1, name: 'M', assessment: 'grade', credits: null, grade: null, passed: null, personal: false }),
+      expect.objectContaining({ id: 2, personal: true, credits: null }),
+    ]);
+    expect(s10.getLecture(5)).toMatchObject({ title: 'LA' });
+    // The database itself refuses impossible values.
+    expect(() => v10.db.exec('UPDATE subjects SET grade = 7 WHERE id = 1')).toThrow();
+    expect(() => v10.db.exec("UPDATE subjects SET assessment = 'stars' WHERE id = 1")).toThrow();
+  });
+});

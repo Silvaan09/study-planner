@@ -718,26 +718,40 @@ textarea.input {
   color: var(--text-3);
   margin: 0 10px 6px;
 }
-.semester-head {
+.semester-btn {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 2px;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-3);
+  text-align: left;
+  cursor: pointer;
 }
-.semester-head .sidebar-label {
-  margin-bottom: 0;
+.semester-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+  color: var(--text-2);
 }
-.semester-head .icon-btn {
-  width: 26px;
-  height: 26px;
+.semester-btn-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
-.semester-picker select {
-  font-weight: 600;
-  height: 34px;
+.semester-btn-text strong {
+  font-size: 13.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.semester-dates {
-  margin: 6px 10px 0;
-  font-size: 12px;
+.semester-btn-text small {
+  font-size: 11.5px;
   color: var(--text-3);
 }
 /* Sidebar groups: Planning, Subjects, and Trash/Settings pinned to the bottom. */
@@ -3812,4 +3826,510 @@ div.setting-row {
     width: 100%;
     opacity: 0.6;
   }
+}
+
+/* ------------------------------------------------------------------ results (credits and grades) */
+.result-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-3);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.result-badge.passed {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.result-badge.failed {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.segmented.compact .seg {
+  padding: 0 6px;
+  white-space: nowrap;
+}
+.seg.result-passed.active {
+  color: var(--success);
+}
+.seg.result-failed.active {
+  color: var(--danger);
+}
+.subject-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ settings: startup, backups */
+.card-subtitle {
+  font-size: 13.5px;
+  font-weight: 700;
+  margin: 22px 0 4px;
+}
+.backup-list {
+  list-style: none;
+  margin: 10px 0 12px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.backup-row {
+  display: grid;
+  grid-template-columns: 1fr 150px 70px auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px 6px 12px;
+  font-size: 13px;
+}
+.backup-row + .backup-row {
+  border-top: 1px solid var(--border);
+}
+.backup-row:hover {
+  background: var(--surface-2);
+}
+.backup-kind {
+  color: var(--text-2);
+}
+.backup-kind.kind-pre-restore,
+.backup-kind.kind-pre-migration {
+  color: var(--warn);
+}
+.backup-size {
+  color: var(--text-3);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.setting-row input.switch:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ------------------------------------------------------------------ semesters page */
+/* Full window (no sidebar): header, a row of tabs (Overview, then one per semester), the selected tab. */
+.semesters-page {
+  height: 100%;
+  overflow-y: auto;
+  background: var(--bg);
+  padding-bottom: 40px;
+}
+.sp-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg);
+}
+.sp-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  position: sticky;
+  top: 68px;
+  z-index: 2;
+  background: var(--bg);
+}
+.sp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  font-weight: 600;
+  font-size: 13.5px;
+  white-space: nowrap;
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.sp-tab:hover {
+  color: var(--text);
+}
+.sp-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.sp-tab-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.sp-body {
+  padding-top: 18px;
+}
+.sp-stats .stat strong small,
+.sp-sem-stats strong small {
+  font-size: 0.6em;
+  font-weight: 600;
+  color: var(--text-3);
+}
+.sp-card {
+  margin-bottom: 16px;
+  max-width: 1040px;
+}
+.sp-note {
+  margin: 10px 0 0;
+}
+.sp-note-top {
+  margin: -6px 0 14px;
+}
+.sp-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  padding: 0 24px;
+  max-width: 1088px;
+}
+.sp-sem-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 18px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+.sp-sem-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+}
+.sp-sem-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.sp-badge {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.sp-sem-dates {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.sp-sem-stats {
+  display: flex;
+  gap: 22px;
+  margin-top: 12px;
+}
+.sp-sem-stats > span {
+  display: flex;
+  flex-direction: column;
+}
+.sp-sem-stats strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.sp-sem-stats small {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.sp-sem-new {
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  gap: 8px;
+  min-height: 120px;
+  color: var(--text-3);
+  font-weight: 600;
+  background: transparent;
+  border-style: dashed;
+  box-shadow: none;
+}
+.sp-sem-new:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: none;
+}
+.sp-sem-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px 16px;
+  flex-wrap: wrap;
+}
+.sp-sem-head h2 {
+  font-size: 20px;
+  font-weight: 700;
+}
+.sp-subjects {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.sp-subjects th {
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+  padding: 0 10px 8px;
+}
+.sp-subjects td {
+  padding: 9px 10px;
+  border-top: 1px solid var(--border);
+}
+.sp-subjects .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.sp-subjects tbody tr {
+  cursor: pointer;
+}
+.sp-subjects tbody tr:hover td,
+.sp-subjects tbody tr:focus-visible td {
+  background: var(--surface-2);
+}
+.sp-subjects tbody tr:focus-visible {
+  outline: none;
+}
+.sp-subject {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+/* Grade trend: one series in the accent colour, recessive grid, dashed pass line. */
+.trend {
+  position: relative;
+}
+.trend-svg {
+  display: block;
+  overflow: visible;
+}
+.trend-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.trend-pass {
+  stroke: var(--text-3);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+.trend-axis {
+  fill: var(--text-3);
+  font-size: 11px;
+}
+.trend-x {
+  font-size: 11.5px;
+}
+.trend-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.trend-dot {
+  fill: var(--accent);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+.trend-value {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.trend-cross {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.trend-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+.trend-tip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 14px));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 4;
+}
+.trend-tip strong {
+  color: var(--text);
+}
+
+/* Activity grid: one square per day (columns = weeks, rows = Mon to Sun), filled by the share of the day that is done. */
+.activity {
+  --ag-cell: 18px;
+  --ag-gap: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 2px;
+}
+.ag-body {
+  display: flex;
+  gap: 8px;
+}
+.ag-weekdays {
+  display: grid;
+  grid-template-rows: repeat(7, var(--ag-cell));
+  gap: var(--ag-gap);
+  margin-top: 20px;
+  font-size: 10.5px;
+  color: var(--text-3);
+  line-height: var(--ag-cell);
+}
+.ag-main {
+  position: relative;
+}
+.ag-months {
+  display: grid;
+  grid-template-columns: repeat(var(--ag-weeks), var(--ag-cell));
+  gap: var(--ag-gap);
+  height: 16px;
+  margin-bottom: 4px;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.ag-months span {
+  white-space: nowrap;
+  overflow: visible;
+}
+.ag-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, var(--ag-cell));
+  grid-auto-columns: var(--ag-cell);
+  gap: var(--ag-gap);
+}
+.ag-cell {
+  display: inline-block;
+  width: var(--ag-cell);
+  height: var(--ag-cell);
+  border-radius: 3px;
+  background: var(--surface-3);
+}
+.ag-cell.ag-none {
+  background: transparent;
+}
+.ag-l1 {
+  background: color-mix(in srgb, var(--success) 28%, var(--surface-3));
+}
+.ag-l2 {
+  background: color-mix(in srgb, var(--success) 50%, var(--surface-3));
+}
+.ag-l3 {
+  background: color-mix(in srgb, var(--success) 72%, var(--surface-3));
+}
+.ag-l4 {
+  background: var(--success);
+}
+.ag-cell.ag-future {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.ag-cell.ag-today {
+  outline: 2px solid var(--text-2);
+  outline-offset: 1px;
+}
+.ag-grid .ag-cell:not(.ag-none):hover {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+.ag-legend {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.ag-legend .ag-cell {
+  width: 12px;
+  height: 12px;
+}
+.ag-legend > span:first-child {
+  margin-right: 4px;
+}
+.ag-legend .ag-future {
+  margin-left: 14px;
+}
+.ag-tip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 8px));
+  width: max-content;
+  min-width: 240px;
+  max-width: 380px;
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  color: var(--text-2);
+  pointer-events: none;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ag-tip.start {
+  transform: translate(-14px, calc(-100% - 8px));
+}
+.ag-tip-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  white-space: nowrap;
+}
+.ag-tip-head strong {
+  color: var(--text);
+}
+.ag-tip-row {
+  display: grid;
+  grid-template-columns: 10px 1fr 56px 32px;
+  align-items: center;
+  gap: 7px;
+}
+.ag-tip-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+.ag-tip-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+.ag-tip-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--c);
+}
+.ag-tip-count {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
 }

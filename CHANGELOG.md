@@ -2,6 +2,24 @@
 
 Versions follow [semantic versioning](https://semver.org): **major** for changes you have to act on yourself or that remove features, **minor** for new features and visible UI changes (including automatic database migrations), **patch** for bug fixes and small tweaks.
 
+## 2.2.0 — 2026-11-13
+- **All your semesters on one page.** Click the semester at the top of the sidebar (or search for "Semesters") to open the new **Semesters** page. The **Overview** shows your overall average, the credits you've earned, a chart of your average per semester and a card for each semester. Each semester also has its own tab with its subjects, credits, results and average. Look at an old semester without leaving the one you're planning, or press **Open in planner** to switch to it. New semesters are created and edited here too.
+
+![The Semesters page with the overall average, credits, the average per semester and a card for each semester](https://raw.githubusercontent.com/Silvaan09/study-planner/v2.2.0/docs/screenshots/semesters.png)
+
+- **Credits and grades per subject.** When you create a subject, choose whether it's graded (Swiss scale 1–6, any two decimals like 4.12) or **pass/fail**, and enter its credits (1.5 works too). Add the grade or the result once you have it, in the subject's edit window. Averages are weighted by credits. Pass/fail subjects count towards your credits but not your average, and credits only count as earned once a subject is passed (4.0 or more).
+- **See where you're falling behind.** Each semester's tab has an activity grid with one square per day, from the first day of the semester to your last exam. The more of that day's lectures and exercise sessions are done, the fuller its square, so open days stand out. Days with nothing planned count as done, so a finished semester is all green. Hover a day to see how far along each subject is.
+
+![A semester's subjects with their credits and results, and the activity grid with one subject's progress on a day](https://raw.githubusercontent.com/Silvaan09/study-planner/v2.2.0/docs/screenshots/semester-activity.png)
+
+- **Restore a backup.** **Settings → Data & backups** now lists your backups (daily, made by you, before an upgrade). Restore one with a click, or restore a backup file from somewhere else. Your current data is backed up first, so a restore can always be undone.
+- **Start with Windows.** Turn it on in **Settings → Startup** and Study Planner opens minimized in the taskbar when you sign in.
+- **Opens on today's semester.** The app now always starts on the semester you're in today, including its exam study period. During exam season it opens on the current study week, not the last week of lectures.
+- **Quieter timetable.** Hovering a lecture, exercise or deadline no longer shows instructions like "Drag to another day…", and the legend's explanations in brackets are gone. **Manage subjects** shows each subject's credits and result next to its name, and its subtitle is just the semester's name.
+- Database schema v10 (new columns for a subject's assessment, credits and result). Existing data is kept; a backup is made automatically before the upgrade. After updating, older app versions can no longer open the database.
+- Development: the service, the timetable view and the dialogs are split into smaller files (`src/main/service/`, `src/renderer/views/timetable/`, `src/renderer/dialogs/`) with no change in behaviour. The demo data has two finished semesters with results. Tests: backups and restoring, grades, the startup semester, the activity grid, credits and results, and the v10 upgrade.
+- Claude config: `CLAUDE.md` says to ask questions until a request is completely clear, and to present the plan before implementing.
+
 ## 2.1.1 — 2026-11-08
 - **Study weeks follow the semester.** The exam study period now starts on the Monday after the semester's last week, so study weeks and semester weeks never overlap. It runs until your last exam, as before.
 - **Calmer timetable header.** The study days no longer each carry an "Exam study" label. Their violet tint and the week's title ("Exam study week 1 of 7") show it.
