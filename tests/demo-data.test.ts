@@ -5,6 +5,7 @@ import path from 'node:path';
 import { openDatabase } from '../src/main/db/database';
 import { StudyService } from '../src/main/service';
 import { seedDemo } from '../src/main/demoData';
+import { gradeStats } from '../src/shared/grades';
 
 let dir: string;
 let svc: StudyService;
@@ -111,5 +112,25 @@ describe('demo data (npm run seed-demo)', () => {
       { date: '2026-10-01', status: 'not_started' },
     ]);
     expect(job.status).toBe('in_progress');
+  });
+
+  it('has two finished semesters with results before the current one', () => {
+    seedDemo(svc, '2026-09-29');
+    const list = svc.listSemesterOverview();
+    expect(list.map((o) => o.semester.name)).toEqual(['Autumn Semester 2026', 'Spring Semester 2026', 'Autumn Semester 2025']);
+    const spring = gradeStats(list[1].subjects);
+    // Thermodynamics (3.75) is failed: in the average, not in the earned credits.
+    expect([spring.totalCredits, spring.earnedCredits, spring.withResult]).toEqual([29, 23, 5]);
+    expect(spring.average).toBeCloseTo((5.5 * 7 + 5.75 * 8 + 3.75 * 6 + 4.12 * 5) / 26);
+    expect(gradeStats(list[0].subjects)).toMatchObject({ average: null, totalCredits: 31.5, withResult: 0 });
+    // Past lectures are done (except each one's first week), so the activity grid is nearly full.
+    const days = svc.getSemesterActivity(list[1].semester.id);
+    expect(days.filter((d) => d.subjects.some((x) => x.done < x.total)).map((d) => d.date)).toEqual([
+      '2026-02-16',
+      '2026-02-17',
+      '2026-02-18',
+      '2026-02-19',
+      '2026-02-20',
+    ]);
   });
 });

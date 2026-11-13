@@ -6,6 +6,7 @@ import { WEEKDAY_SHORT, formatDate, formatDateRange, todayISO } from '../../shar
 import { EXERCISE_STAGE_LABEL, exerciseDueBy, exerciseStage, type Exercise, type Id, type Semester, type Subject, type SubjectOverview } from '../../shared/types';
 import { ExamDialog, ExerciseDialog, LectureDialog, SubjectDialog } from '../dialogs';
 import { FocusPill } from '../components/FocusPill';
+import { formatCredits, resultLabel, subjectOutcome } from '../../shared/grades';
 import { ExamRow } from '../components/ExamRow';
 import { ChecklistProgress } from '../components/Checklist';
 import { Book, ChevronDown, ChevronRight, Flag, ListTodo, Pencil, Plus, Repeat, StatusIcon, Trash } from '../components/Icons';
@@ -105,7 +106,7 @@ export function SubjectsView({ semester, focus, clearFocus }: { semester: Semest
       <header className="view-header">
         <div className="week-title">
           <h1>Subjects</h1>
-          <div className="week-sub">{semester.name} — subjects, exams, weekly lectures, exercises and personal tasks</div>
+          <div className="week-sub">{semester.name}</div>
         </div>
         <span className="spacer" />
         <FocusPill subject={focus} onClear={clearFocus} />
@@ -156,6 +157,12 @@ export function SubjectsView({ semester, focus, clearFocus }: { semester: Semest
               <header>
                 <span className="subject-swatch" />
                 <h2>{subject.name}</h2>
+                {(subject.credits !== null || subjectOutcome(subject) !== null) && (
+                  <span className="subject-meta">
+                    {subject.credits !== null && <span>{formatCredits(subject.credits)}</span>}
+                    {subjectOutcome(subject) !== null && <span className={`result-badge ${subjectOutcome(subject)}`}>{resultLabel(subject)}</span>}
+                  </span>
+                )}
                 <span className="spacer" />
                 <button className="icon-btn" title="Edit subject" onClick={() => ui.dialog((close) => <SubjectDialog semesterId={semester.id} subject={subject} close={close} />)}>
                   <Pencil size={15} />

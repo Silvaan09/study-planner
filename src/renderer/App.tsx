@@ -1,20 +1,22 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { api } from './api';
 import { useLoad, useUi } from './ui';
-import { formatDate, startOfWeek, todayISO, type ISODate } from '../shared/dates';
-import type { Id, Semester } from '../shared/types';
+import { formatDate, todayISO, type ISODate } from '../shared/dates';
+import type { Id, Semester, SemesterOverview } from '../shared/types';
+import { currentSemesterId, initialWeek } from '../shared/currentSemester';
 import { BreaksDialog, ExamDialog, ExerciseDialog, LectureDialog, SemesterDialog } from './dialogs';
 import { TodayView } from './views/TodayView';
-import { TimetableView } from './views/TimetableView';
+import { TimetableView } from './views/timetable/TimetableView';
 import { OutstandingView } from './views/OutstandingView';
 import { SubjectsView } from './views/SubjectsView';
 import { TrashView } from './views/TrashView';
 import { SettingsView } from './views/SettingsView';
+import { SemestersPage } from './views/SemestersPage';
 import { SearchPalette, targetWeek, type SearchPick, type SearchView } from './components/SearchPalette';
 import { useUpdateStatus } from './updates';
 import { WhatsNewDialog } from './components/WhatsNew';
 import { useRestartToUpdate } from './components/UpdatingOverlay';
-import { Calendar, Download, ListTodo, Palm, Pencil, Plus, Search, Settings, Sliders, Sun, Trash, X } from './components/Icons';
+import { Calendar, ChevronRight, Download, Layers, ListTodo, Palm, Plus, Search, Settings, Sliders, Sun, Trash, X } from './components/Icons';
 import logo from './logo.svg';
 
 const VIEWS = ['today', 'timetable', 'outstanding', 'subjects', 'trash', 'settings'] as const;
@@ -27,6 +29,7 @@ const SEARCH_VIEWS: SearchView[] = [
   { id: 'outstanding', label: 'Outstanding', icon: <ListTodo size={15} />, keywords: ['overdue', 'missed', 'open'] },
   { id: 'subjects', label: 'Manage subjects', icon: <Sliders size={15} />, keywords: ['lectures', 'exams', 'series'] },
   { id: 'breaks', label: 'Breaks & holidays', icon: <Palm size={15} />, keywords: ['vacation', 'semester'] },
+  { id: 'semesters', label: 'Semesters', icon: <Layers size={15} />, keywords: ['grades', 'credits', 'average', 'results', 'activity'] },
   { id: 'trash', label: 'Trash', icon: <Trash size={15} />, keywords: ['deleted', 'restore'] },
   { id: 'settings', label: 'Settings', icon: <Settings size={15} />, keywords: ['sound', 'updates', 'backup', 'data'] },
 ];
@@ -54,42 +57,34 @@ function remember(key: string, value: string) {
   }
 }
 
-/** The semester to show by default: the one containing today, else the latest. */
-function pickSemester(list: Semester[], preferredId: number | null): Semester | null {
-  const today = todayISO();
-  return (
-    list.find((s) => s.id === preferredId) ??
-    list.find((s) => s.startDate <= today && today <= s.endDate) ??
-    list[0] ??
-    null
-  );
-}
-
-function initialWeek(s: Semester): ISODate {
-  const today = todayISO();
-  if (today < s.startDate) return startOfWeek(s.startDate);
-  if (today > s.endDate) return startOfWeek(s.endDate);
-  return startOfWeek(today);
+/** The semester picked in this session, else today's (see currentSemesterId: its exam study period counts too). */
+function pickSemester(list: SemesterOverview[], pickedId: number | null): SemesterOverview | null {
+  const id = list.some((o) => o.semester.id === pickedId) ? pickedId : currentSemesterId(list, todayISO());
+  return list.find((o) => o.semester.id === id) ?? null;
 }
 
 export function App() {
   const ui = useUi();
-  const { data: semesters } = useLoad(() => api.listSemesters(), []);
-  const [semesterId, setSemesterId] = useState<number | null>(() => Number(remembered('semesterId', '')) || null);
+  // Every start opens today's semester; switching (on the Semesters page) lasts for the session.
+  const { data: overviews } = useLoad(() => api.listSemesterOverview(), []);
+  const semesters = useMemo(() => overviews?.map((o) => o.semester), [overviews]);
+  const [semesterId, setSemesterId] = useState<number | null>(null);
+  // The Semesters page covers the whole window; the planner's state stays as it was underneath.
+  const [semestersOpen, setSemestersOpen] = useState(false);
   const [view, setView] = useState<View>(rememberedView);
   const [weekStart, setWeekStart] = useState<ISODate | null>(null);
   // Subject picked in the sidebar: the timetable greys out the others, Outstanding shows only it. Not remembered.
   const [focusId, setFocusId] = useState<Id | null>(null);
 
-  const semester = useMemo(() => (semesters ? pickSemester(semesters, semesterId) : null), [semesters, semesterId]);
+  const current = useMemo(() => (overviews ? pickSemester(overviews, semesterId) : null), [overviews, semesterId]);
+  const semester = current?.semester ?? null;
 
   useEffect(() => {
     if (semester && semester.id !== semesterId) setSemesterId(semester.id);
   }, [semester, semesterId]);
   useEffect(() => {
-    if (semester) {
-      remember('semesterId', String(semester.id));
-      setWeekStart(initialWeek(semester));
+    if (current) {
+      setWeekStart(initialWeek(current, todayISO()));
       setFocusId(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -131,6 +126,8 @@ export function App() {
   const openPick = useCallback(
     ({ target: t, alt }: SearchPick) => {
       if (!semester) return;
+      // Picked while the Semesters page is open: show it in the planner (unless it's that page itself).
+      setSemestersOpen(t.kind === 'view' && t.id === 'semesters');
       const list = subjects ?? [];
       const week = alt ? targetWeek(t, semester, todayISO()) : null;
       if (week) {
@@ -141,6 +138,7 @@ export function App() {
       switch (t.kind) {
         case 'view':
           if (t.id === 'breaks') ui.dialog((close) => <BreaksDialog semester={semester} close={close} />);
+          else if (t.id === 'semesters') setSemestersOpen(true);
           else setView(t.id as View);
           break;
         case 'subject':
@@ -226,6 +224,21 @@ export function App() {
   };
   const clearFocus = () => setFocusId(null);
 
+  if (semestersOpen && overviews) {
+    return (
+      <SemestersPage
+        overviews={overviews}
+        activeId={semester.id}
+        onBack={() => setSemestersOpen(false)}
+        onOpen={(id) => {
+          setSemesterId(id);
+          setSemestersOpen(false);
+          if (view === 'trash' || view === 'settings') setView('timetable');
+        }}
+      />
+    );
+  }
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -241,33 +254,17 @@ export function App() {
         </button>
 
         <div className="semester-picker">
-          <div className="semester-head">
-            <label className="sidebar-label" htmlFor="semester-select">
-              Semester
-            </label>
-            <span>
-              <button
-                className="icon-btn"
-                title="Edit semester"
-                onClick={() => ui.dialog((close) => <SemesterDialog semester={semester} close={close} />)}
-              >
-                <Pencil size={14} />
-              </button>
-              <button className="icon-btn" title="New semester" onClick={newSemester}>
-                <Plus size={15} />
-              </button>
+          <div className="sidebar-label">Semester</div>
+          {/* Opens the Semesters page: switching, new and edit semester, grades and activity. */}
+          <button className="semester-btn" onClick={() => setSemestersOpen(true)} title="All semesters, grades and activity">
+            <span className="semester-btn-text">
+              <strong>{semester.name}</strong>
+              <small>
+                {formatDate(semester.startDate, { year: true })} – {formatDate(semester.endDate, { year: true })}
+              </small>
             </span>
-          </div>
-          <select id="semester-select" className="input" value={semester.id} onChange={(e) => setSemesterId(Number(e.target.value))}>
-            {semesters.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-          <div className="semester-dates">
-            {formatDate(semester.startDate, { year: true })} – {formatDate(semester.endDate, { year: true })}
-          </div>
+            <ChevronRight size={16} />
+          </button>
         </div>
 
         <nav className="nav-section" aria-label="Planning">

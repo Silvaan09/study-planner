@@ -64,7 +64,17 @@ export interface Subject {
    * "tasks"; it has no lectures or exams and can't be deleted.
    */
   personal: boolean;
+  /** How the subject is assessed: a grade (Swiss scale, 1–6, 6 best) or pass/fail. Always 'grade' for the personal subject. */
+  assessment: Assessment;
+  /** Credits (ECTS); decimals allowed. null = not set (always for the personal subject). */
+  credits: number | null;
+  /** 'grade' subjects: the grade, 1.00–6.00 with at most two decimals; null = no result yet. */
+  grade: number | null;
+  /** 'pass_fail' subjects: the result; null = no result yet. */
+  passed: boolean | null;
 }
+
+export type Assessment = 'grade' | 'pass_fail';
 
 /** A recurring weekly lecture definition. */
 export interface Lecture {
@@ -330,6 +340,24 @@ export interface AppInfo {
   isDev: boolean;
 }
 
+/** Where a backup file came from (from its file name, see src/main/db/backups.ts). */
+export type BackupKind = 'auto' | 'manual' | 'pre-migration' | 'pre-restore' | 'other';
+
+export interface BackupInfo {
+  /** File name inside the backups folder (what restoreBackup takes). */
+  file: string;
+  kind: BackupKind;
+  /** When it was made: local time "YYYY-MM-DDTHH:MM:SS" from the file name, else the file's modification time. */
+  createdAt: string;
+  size: number;
+}
+
+/** "Start with Windows". Only available in the installed app (not in development). */
+export interface AutostartState {
+  available: boolean;
+  enabled: boolean;
+}
+
 // ---- Inputs ----
 
 export interface SemesterInput {
@@ -342,6 +370,26 @@ export interface SubjectInput {
   semesterId: Id;
   name: string;
   color: string;
+  /** Left out: 'grade' when creating, unchanged when updating. Changing it clears the result of the other kind. */
+  assessment?: Assessment;
+  /** Left out: unchanged (none when creating); null clears. Ignored for the personal subject. */
+  credits?: number | null;
+  grade?: number | null;
+  passed?: boolean | null;
+}
+
+/** A semester with what the Semesters page needs: its exam study period and its (non-personal) subjects. */
+export interface SemesterOverview {
+  semester: Semester;
+  studyPeriod: StudyPeriod | null;
+  subjects: Subject[];
+}
+
+/** One day of a semester's activity grid: per subject, its lectures + exercise sessions that day and how many are done. */
+export interface ActivityDay {
+  date: ISODate;
+  /** Only subjects with something on that day; never the personal subject. */
+  subjects: { subjectId: Id; done: number; total: number }[];
 }
 
 export interface LectureInput {
@@ -459,6 +507,10 @@ export interface StudyApi {
   createSemester(input: SemesterInput): Semester;
   updateSemester(id: Id, input: SemesterInput): Semester;
   deleteSemester(id: Id): DeleteResult;
+  /** Every semester (newest first) with its study period and subjects (without the personal one). */
+  listSemesterOverview(): SemesterOverview[];
+  /** Every day from the semester's start to the end of its exam study period (or its end), in order. */
+  getSemesterActivity(semesterId: Id): ActivityDay[];
 
   listSubjects(semesterId: Id): Subject[];
   subjectOverview(semesterId: Id): SubjectOverview[];
@@ -514,6 +566,19 @@ export interface StudyApi {
 
   createBackup(): string;
   openDataFolder(): void;
+  /** The backups folder's backups, newest first. */
+  listBackups(): BackupInfo[];
+  /**
+   * Replaces the whole database with a backup from the backups folder (by file name). The current state is backed up
+   * first ("pre-restore"); an older backup is upgraded. The renderer reloads afterwards.
+   */
+  restoreBackup(file: string): void;
+  /** Like restoreBackup, for a .db file picked in an open dialog. false = cancelled. */
+  restoreBackupFromFile(): boolean;
+
+  getAutostart(): AutostartState;
+  /** Start with Windows (minimized). */
+  setAutostart(enabled: boolean): AutostartState;
 
   getUpdateStatus(): UpdateStatus;
   /** Looks for a newer release on GitHub (downloaded in the background when there is one). */

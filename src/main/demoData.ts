@@ -2,17 +2,55 @@
 // Never used by the app itself. Completion states are derived from `today`, so the data looks like a
 // semester in progress: past lectures and exercises (and their sessions) are mostly done, a few are left open on purpose.
 import { dateInWeek, weeksBetween, type ISODate } from '../shared/dates';
-import type { ExamKind, Exercise, Id } from '../shared/types';
+import type { Assessment, ExamKind, Exercise, Id } from '../shared/types';
 import type { StudyService } from './service';
 
 const SEMESTER = { name: 'Autumn Semester 2026', startDate: '2026-09-14', endDate: '2026-12-18' };
 
 const SUBJECTS = {
-  chemistry: { name: 'Chemistry', color: '#ec4899' },
-  cs: { name: 'Computer Science', color: '#14b8a6' },
-  math: { name: 'Mathematics', color: '#4f6bed' },
-  physics: { name: 'Physics', color: '#f97316' },
+  chemistry: { name: 'Chemistry', color: '#ec4899', credits: 6 },
+  cs: { name: 'Computer Science', color: '#14b8a6', credits: 8 },
+  math: { name: 'Mathematics', color: '#4f6bed', credits: 10 },
+  physics: { name: 'Physics', color: '#f97316', credits: 7.5 },
 } as const;
+
+interface PastSubject {
+  name: string;
+  color: string;
+  credits: number;
+  assessment?: Assessment;
+  grade?: number;
+  passed?: boolean;
+  /** Weekly lecture: [weekday, start, end] (all completed except the first week's). */
+  lecture?: [number, string, string];
+}
+
+/** Two finished semesters with results, for the Semesters page (overview, averages, trend, activity). */
+const PAST_SEMESTERS: { name: string; startDate: ISODate; endDate: ISODate; subjects: PastSubject[] }[] = [
+  {
+    name: 'Autumn Semester 2025',
+    startDate: '2025-09-15',
+    endDate: '2025-12-19',
+    subjects: [
+      { name: 'Introduction to Programming', color: '#14b8a6', credits: 8, grade: 5.25 },
+      { name: 'Calculus', color: '#4f6bed', credits: 7, grade: 4.5 },
+      { name: 'General Physics', color: '#f97316', credits: 7, grade: 4.75 },
+      { name: 'Study Skills', color: '#64748b', credits: 2, assessment: 'pass_fail', passed: true },
+    ],
+  },
+  {
+    name: 'Spring Semester 2026',
+    startDate: '2026-02-16',
+    endDate: '2026-05-29',
+    subjects: [
+      { name: 'Linear Algebra', color: '#4f6bed', credits: 7, grade: 5.5, lecture: [1, '10:15', '12:00'] },
+      { name: 'Object-Oriented Programming', color: '#14b8a6', credits: 8, grade: 5.75, lecture: [2, '14:15', '16:00'] },
+      { name: 'Thermodynamics', color: '#f97316', credits: 6, grade: 3.75, lecture: [3, '08:15', '10:00'] },
+      { name: 'Chemistry Basics', color: '#ec4899', credits: 5, grade: 4.12, lecture: [4, '10:15', '12:00'] },
+      { name: 'Academic Writing', color: '#a855f7', credits: 3, assessment: 'pass_fail', passed: true, lecture: [5, '13:15', '15:00'] },
+    ],
+  },
+];
 type SubjectKey = keyof typeof SUBJECTS;
 
 // [subject, title, weekday (1 = Mon), start, end, first / last lecture (default: the semester's)]
@@ -128,6 +166,16 @@ export interface DemoSummary {
 /** Fills an empty database with the demo semester. Runs in one transaction. */
 export function seedDemo(svc: StudyService, today: ISODate): DemoSummary {
   return svc.tx(() => {
+    for (const past of PAST_SEMESTERS) {
+      const ps = svc.createSemester({ name: past.name, startDate: past.startDate, endDate: past.endDate });
+      for (const { lecture, ...subject } of past.subjects) {
+        const id = svc.createSubject({ semesterId: ps.id, ...subject }).id;
+        if (!lecture) continue;
+        const l = svc.createLecture({ subjectId: id, title: subject.name, weekday: lecture[0], startTime: lecture[1], endTime: lecture[2] });
+        for (const week of weeksBetween(ps.startDate, ps.endDate).slice(1)) svc.setLectureCompleted(l.id, week, true);
+      }
+    }
+
     const sem = svc.createSemester(SEMESTER);
     const subjectIds = {} as Record<SubjectKey | 'personal', Id>;
     for (const [key, s] of Object.entries(SUBJECTS) as [SubjectKey, (typeof SUBJECTS)[SubjectKey]][]) {

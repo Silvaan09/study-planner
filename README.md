@@ -21,10 +21,11 @@ Windows desktop app · works fully offline · your data stays on your PC
 - **Nothing slips through.** Missed lectures and unfinished exercises pile up in one Outstanding list until you deal with them, and every exam counts down.
 - **Built around your actual semester.** Courses that start late or end early, autumn breaks and public holidays: lectures only show up when they really take place. After the semester, the weeks until your last exam are marked as your exam study period.
 - **Deadlines on their own.** Sign-ups and other things with nothing to work on can have just a deadline.
+- **All your semesters, grades and credits.** Enter each subject's credits and grade (Swiss 1–6) or pass/fail result, and the Semesters page shows your average per semester and overall, the credits you've earned, and a day-by-day grid of each semester so you can see at a glance where you fell behind.
 - **Zoom in on one subject.** Click a subject and everything else fades out, so you can see where you stand in it.
 - **Light or dark, your choice.** Three themes in Settings: Paper (light), Slate (the default dark) and Obsidian (near-black).
 - **Checking things off feels good.** A soft ding for every lecture and exercise, confetti when your week is done.
-- **Your data stays yours.** Everything lives offline on your PC, with daily backups, a trash bin for anything you delete, and updates that install themselves without touching your data.
+- **Your data stays yours.** Everything lives offline on your PC, with daily backups you can restore with one click, a trash bin for anything you delete, and updates that install themselves without touching your data. It can start with Windows, waiting in the taskbar.
 
 ## Screenshots
 
@@ -33,6 +34,10 @@ Windows desktop app · works fully offline · your data stays on your PC
 | Plan recurring exercises with checklists | See what's still open |
 |---|---|
 | ![Creating a recurring exercise planned every Thursday with a three-step checklist, the date picker open](docs/screenshots/exercise-dialog.png) | ![Outstanding list with an overdue exercise](docs/screenshots/outstanding.png) |
+
+| All your semesters | Where you stand in a semester |
+|---|---|
+| ![Semesters page with the overall average, earned credits, the average per semester and a card for each semester](docs/screenshots/semesters.png) | ![A semester's subjects with credits and grades, and a day-by-day activity grid showing each subject's progress on a hovered day](docs/screenshots/semester-activity.png) |
 
 | Focus on one subject | Manage your subjects |
 |---|---|
@@ -58,8 +63,7 @@ From version 1.10.0 on, the app updates itself: it checks GitHub for a new versi
 Everything is stored locally in a SQLite database in `%APPDATA%\StudyPlanner\`, separate from the program itself. There's no account and no cloud, and no internet connection is needed (except to look for updates).
 
 - A backup is saved automatically once a day (the last 14 are kept) and before every database upgrade.
-- **Settings → Data & backups** in the app shows the exact location and can create a backup on demand.
-- To restore a backup, close the app, copy the backup file over `study-planner.db`, and delete any `study-planner.db-wal` and `study-planner.db-shm` files next to it.
+- **Settings → Data & backups** in the app shows the exact location, can create a backup on demand, and restores any backup (or a backup file from elsewhere) with one click. Your current data is backed up first, so a restore can be undone.
 
 ## Building from source
 
