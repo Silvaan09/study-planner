@@ -11,7 +11,9 @@ const STATUS_TEXT: Record<ExerciseStatus, string> = { not_started: 'Not started'
 function statusTitle(p: SemesterWeekProgress | undefined): string | undefined {
   const status = p && weekStatus(p);
   if (!p || !status) return 'Nothing planned this week';
-  return `${STATUS_TEXT[status]} · ${p.lecturesDone}/${p.lectures} lectures, ${p.exercisesDone}/${p.exercises} exercises`;
+  const exercises = `${p.exercisesDone}/${p.exercises} exercises`;
+  // Study weeks never have lectures.
+  return `${STATUS_TEXT[status]} · ${p.study ? exercises : `${p.lecturesDone}/${p.lectures} lectures, ${exercises}`}`;
 }
 
 /**

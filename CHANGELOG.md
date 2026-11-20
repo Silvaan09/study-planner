@@ -2,6 +2,10 @@
 
 Versions follow [semantic versioning](https://semver.org): **major** for changes you have to act on yourself or that remove features, **minor** for new features and visible UI changes (including automatic database migrations), **patch** for bug fixes and small tweaks.
 
+## 2.2.1 — 2026-11-20
+- **Tidier hover texts.** Hovering an exercise, a deadline or a lecture in the timetable no longer repeats its status, and the check-off circle and hand-in flag no longer say "click to change". The semester button in the sidebar no longer shows a tooltip.
+- **Study weeks in the week list** only show how many exercises are done when you hover their dot, since there are no lectures in them.
+
 ## 2.2.0 — 2026-11-13
 - **All your semesters on one page.** Click the semester at the top of the sidebar (or search for "Semesters") to open the new **Semesters** page. The **Overview** shows your overall average, the credits you've earned, a chart of your average per semester and a card for each semester. Each semester also has its own tab with its subjects, credits, results and average. Look at an old semester without leaving the one you're planning, or press **Open in planner** to switch to it. New semesters are created and edited here too.
 

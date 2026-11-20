@@ -174,7 +174,7 @@ Series-scope edits: a changed deadline shifts each occurrence by the same days; 
 
 ### Timetable (`views/timetable/`)
 
-- Hover titles carry no usage hints (the user removed "Drag to another day…" and "click to toggle, right-click for more"); the legend entries have no explanations in brackets.
+- Hover titles carry no usage hints (the user removed "Drag to another day…", "click to toggle, right-click for more", "click to change", "click to take back") and no status text on cards (planned, deadline and lecture titles show no Done/In progress/Not started/Completed; only the status circle's own title names its status, the flag says "Handed in"/"Not handed in"); the legend entries have no explanations in brackets. The sidebar's semester button has no hover title. WeekPicker's week hover: status · x/y lectures, x/y exercises (study weeks: exercises only).
 
 - Default hours 07:00–21:00, widened to fit lectures; `HOUR_PX = 64`. Day widths via `--days`: 1, 1.6 (two lectures side by side), 2.2 (three+), 0.7 for empty days. Weekend `--weekend` tint; today marked only in the header; days outside the semester hatched.
 - Header: week nav · title (+ break names) · WeekPicker + date jump · FocusPill · counters ("x/y lectures", "x/y exercises" = sessions) · + Lecture · + Exercise.

@@ -256,7 +256,7 @@ export function App() {
         <div className="semester-picker">
           <div className="sidebar-label">Semester</div>
           {/* Opens the Semesters page: switching, new and edit semester, grades and activity. */}
-          <button className="semester-btn" onClick={() => setSemestersOpen(true)} title="All semesters, grades and activity">
+          <button className="semester-btn" onClick={() => setSemestersOpen(true)}>
             <span className="semester-btn-text">
               <strong>{semester.name}</strong>
               <small>

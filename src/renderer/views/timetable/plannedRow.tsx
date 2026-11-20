@@ -55,7 +55,6 @@ export function renderPlannedRow(L: WeekLayout, ctx: WeekContext) {
               const dueIn = e.deadlineDate === null ? null : diffDays(d, e.deadlineDate);
               const sessions = e.plannedDates.length;
               const session = e.plannedDates.indexOf(d) + 1;
-              const sessionsDone = e.sessions.filter((x) => x.status === 'completed').length;
               return (
                 <div
                   key={e.id}
@@ -73,7 +72,7 @@ export function renderPlannedRow(L: WeekLayout, ctx: WeekContext) {
                   }}
                   onClick={() => openExercise(e.id)}
                   onContextMenu={(ev) => exerciseMenu(ev, e, d)}
-                  title={`${e.title} (${subjectName(e.subjectId)}) — ${sessions > 1 ? `session ${session} of ${sessions}: ${EXERCISE_STATUS_LABEL[status]} (${sessionsDone} of ${sessions} done)` : EXERCISE_STATUS_LABEL[status]}\nDeadline: ${e.deadlineDate ? formatDate(e.deadlineDate, { weekday: true, year: true }) : 'none'}${sessions > 1 ? `\nPlanned on ${sessions} days: ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}` : ''}`}
+                  title={`${e.title} (${subjectName(e.subjectId)})\nDeadline: ${e.deadlineDate ? formatDate(e.deadlineDate, { weekday: true, year: true }) : 'none'}${sessions > 1 ? `\nPlanned on ${sessions} days: ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}` : ''}`}
                 >
                   <button
                     className="status-btn"
@@ -81,7 +80,7 @@ export function renderPlannedRow(L: WeekLayout, ctx: WeekContext) {
                       ev.stopPropagation();
                       void cycleStatus(e, d);
                     }}
-                    title={`${EXERCISE_STATUS_LABEL[status]} — click to change${sessions > 1 ? ' (this session only)' : ''}`}
+                    title={sessions > 1 ? `Session ${session} of ${sessions}: ${EXERCISE_STATUS_LABEL[status]}` : EXERCISE_STATUS_LABEL[status]}
                   >
                     <StatusIcon status={status} size={15} />
                   </button>

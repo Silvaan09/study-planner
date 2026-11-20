@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { formatDate } from '../../../shared/dates';
-import { deadlineOnly, EXERCISE_STAGE_LABEL, examTitle, exerciseStage } from '../../../shared/types';
+import { deadlineOnly, examTitle } from '../../../shared/types';
 import { examTime } from '../../components/ExamRow';
 import { Check, Flag, GraduationCap } from '../../components/Icons';
 import type { WeekLayout } from './layout';
@@ -93,7 +93,7 @@ export function renderDueRow(L: WeekLayout, ctx: WeekContext) {
                   onClick={() => openExercise(e.id)}
                   onKeyDown={(ev) => ev.key === 'Enter' && openExercise(e.id)}
                   onContextMenu={(ev) => exerciseMenu(ev, e)}
-                  title={`Deadline: ${e.title} (${subjectName(e.subjectId)}) — ${EXERCISE_STAGE_LABEL[exerciseStage(e)]}\n${deadlineOnly(e) ? 'Deadline only, no days planned to work on it' : `Planned for ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}`}`}
+                  title={`Deadline: ${e.title} (${subjectName(e.subjectId)})\n${deadlineOnly(e) ? 'Deadline only, no days planned to work on it' : `Planned for ${e.plannedDates.map((p) => formatDate(p, { weekday: true })).join(', ')}`}`}
                 >
                   <button
                     className="due-check"
@@ -101,7 +101,7 @@ export function renderDueRow(L: WeekLayout, ctx: WeekContext) {
                       ev.stopPropagation();
                       void toggleHandedIn(e);
                     }}
-                    title={e.handedIn ? 'Handed in — click to take back' : 'Click to mark as handed in'}
+                    title={e.handedIn ? 'Handed in' : 'Not handed in'}
                   >
                     {e.handedIn ? <Check size={13} /> : <Flag size={13} />}
                   </button>
