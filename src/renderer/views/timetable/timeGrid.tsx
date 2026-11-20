@@ -50,7 +50,7 @@ export function renderTimeGrid(L: WeekLayout, ctx: WeekContext) {
                 onClick={() => toggleLecture(o)}
                 onDoubleClick={(ev) => ev.stopPropagation()}
                 onContextMenu={(ev) => lectureMenu(ev, o)}
-                title={`${o.title} (${subjectName(o.subjectId)})\n${o.startTime}–${o.endTime}\n${o.completed ? 'Completed' : 'Not completed'}`}
+                title={`${o.title} (${subjectName(o.subjectId)})\n${o.startTime}–${o.endTime}`}
               >
                 <span className="lec-body">
                   <span className="lec-check">{o.completed ? <Check size={12} /> : null}</span>
