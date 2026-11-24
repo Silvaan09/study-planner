@@ -70,6 +70,24 @@ export function TimeInput({ value, onChange }: { value: string; onChange: (v: st
   );
 }
 
+/** A series' titles: numbered ("Problem Set 01", "Problem Set 02", …) or the same title on every occurrence. */
+export function NumberingPicker({ value, onChange }: { value: boolean; onChange: (numbered: boolean) => void }) {
+  return (
+    <div className="segmented full" role="radiogroup" aria-label="Titles">
+      {(
+        [
+          [true, 'Numbered'],
+          [false, 'Same title'],
+        ] as const
+      ).map(([v, label]) => (
+        <button key={label} type="button" role="radio" aria-checked={value === v} className={`seg ${value === v ? 'active' : ''}`} onClick={() => onChange(v)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Done = the work is finished; handed in = the deadline is dealt with too. */
 export function StatusPicker({
   value,

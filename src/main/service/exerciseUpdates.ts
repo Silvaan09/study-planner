@@ -26,6 +26,10 @@ export class ExerciseUpdateService extends ExerciseService {
       const title = this.text(changes.title, seriesScope ? 'Series title' : 'Exercise title');
       if (title !== (seriesScope ? series!.baseTitle : e.title)) c.title = title;
     }
+    if (changes.numbered !== undefined && series) {
+      const numbered = this.numbered(changes.numbered);
+      if (numbered !== series.numbered) c.numbered = numbered;
+    }
     if (changes.description !== undefined) {
       const d = this.text(changes.description, 'Description', { max: MAX_DESCRIPTION, allowEmpty: true });
       if (d !== e.description) c.description = d;
@@ -66,6 +70,7 @@ export class ExerciseUpdateService extends ExerciseService {
       const e = this.liveExercise(input?.id);
       const scope: Scope = e.seriesId === null ? 'this' : input.scope;
       if (!['this', 'future', 'all'].includes(scope)) throw new UserError('Unknown scope.');
+      if (input.changes?.numbered !== undefined && scope !== 'all') throw new UserError('Numbering can only be changed for the whole series.');
 
       if (scope === 'this') {
         const { checklist, ...c } = this.normalizeChanges(e, input.changes ?? {}, false, null);
@@ -84,9 +89,15 @@ export class ExerciseUpdateService extends ExerciseService {
       }
 
       const series = this.liveSeries(e.seriesId!);
-      const { checklist, ...c } = this.normalizeChanges(e, input.changes ?? {}, true, series);
+      const { checklist, numbered, ...c } = this.normalizeChanges(e, input.changes ?? {}, true, series);
       const structural = checklist !== undefined && checklistSteps(checklist) !== checklistSteps(e.checklist);
-      const fields: OverridableField[] = [...changedFields(c), ...(structural ? ['checklist' as const] : [])];
+      // Switching the numbering on or off retitles the occurrences, like a changed series title.
+      const fields: OverridableField[] = [
+        ...new Set<OverridableField>([...changedFields(c), ...(numbered !== undefined ? ['title' as const] : [])]),
+        ...(structural ? ['checklist' as const] : []),
+      ];
+      const title = c.title ?? series.baseTitle;
+      const withNumber = numbered ?? series.numbered;
       const targets = this.liveSeriesOccurrences(series.id).filter((t) => scope === 'all' || t.sequenceNumber! >= e.sequenceNumber!);
 
       // Never silently overwrite individually changed occurrences: ask first.
@@ -112,7 +123,7 @@ export class ExerciseUpdateService extends ExerciseService {
         const keep = t.id !== e.id && input.overridePolicy === 'keep' ? t.overrides : [];
         const apply = fields.filter((f) => !keep.includes(f));
         const u: Exercise = { ...t, overrides: t.overrides.filter((f) => !apply.includes(f)) };
-        if (apply.includes('title')) u.title = seriesTitle(c.title!, t.sequenceNumber!);
+        if (apply.includes('title')) u.title = seriesTitle(title, t.sequenceNumber!, withNumber);
         if (apply.includes('description')) u.description = c.description!;
         if (apply.includes('subjectId')) u.subjectId = c.subjectId!;
         // Planned dates: the edited pattern, moved to each occurrence's position in the series.
@@ -153,11 +164,12 @@ export class ExerciseUpdateService extends ExerciseService {
       }
       for (const u of updates) this.writeExercise(u);
       for (const [id, list] of checklistWrites) this.saveChecklist(id, list);
-      if (c.title !== undefined || c.subjectId !== undefined) {
+      if (c.title !== undefined || c.subjectId !== undefined || numbered !== undefined) {
         this.run(
-          'UPDATE exercise_series SET base_title = ?, subject_id = ?, updated_at = ? WHERE id = ?',
-          c.title ?? series.baseTitle,
+          'UPDATE exercise_series SET base_title = ?, subject_id = ?, numbered = ?, updated_at = ? WHERE id = ?',
+          title,
           c.subjectId ?? series.subjectId,
+          withNumber ? 1 : 0,
           this.stamp(),
           series.id,
         );

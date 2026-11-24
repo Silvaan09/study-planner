@@ -141,6 +141,8 @@ export interface ExerciseSeries {
   baseTitle: string;
   intervalWeeks: number;
   nextNumber: number;
+  /** true: occurrences are titled "<baseTitle> 01", "… 02"; false: every occurrence has the base title. */
+  numbered: boolean;
 }
 
 export type OverridableField = 'title' | 'description' | 'plannedDate' | 'deadlineDate' | 'subjectId' | 'checklist';
@@ -426,13 +428,21 @@ export interface ExerciseCreateInput {
   recurrence?: {
     intervalWeeks: number;
     count: number;
-    firstNumber: number;
+    /** The first occurrence's number (default 1). */
+    firstNumber?: number;
+    /** false: every occurrence gets the title as entered, without a number (default true). */
+    numbered?: boolean;
   };
 }
 
 export interface ExerciseChanges {
   /** For scope 'this': the full title. For 'future'/'all': the series base title. */
   title?: string;
+  /**
+   * Scope 'all' only: whether the series' titles carry a number. Changing it retitles every occurrence (an
+   * individually changed title is a conflict, like a changed series title).
+   */
+  numbered?: boolean;
   description?: string;
   subjectId?: Id;
   /** For 'future'/'all': the same pattern is applied to each affected occurrence, shifted by its position in the series. */

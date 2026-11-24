@@ -360,6 +360,17 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 11,
+    name: 'series without numbers',
+    up(db) {
+      // A series can leave the number out of its titles ("Summarize this week's lecture" every week). New column only;
+      // existing series stay numbered. sequence_number is kept either way (order and date shifts).
+      db.exec(`
+        ALTER TABLE exercise_series ADD COLUMN numbered INTEGER NOT NULL DEFAULT 1 CHECK (numbered IN (0, 1));
+      `);
+    },
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = migrations[migrations.length - 1].version;

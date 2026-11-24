@@ -3,7 +3,6 @@ import { api } from '../api';
 import { useLoad, useNow, useUi } from '../ui';
 import { formatDate, formatDateRange, todayISO } from '../../shared/dates';
 import { formatAverage, formatNumber, gradeStats, resultLabel, subjectOutcome, type GradeStats } from '../../shared/grades';
-import { semesterLastDay } from '../../shared/currentSemester';
 import type { Id, Semester, SemesterOverview, Subject } from '../../shared/types';
 import { SemesterDialog, SubjectDialog } from '../dialogs';
 import { ActivityGrid } from '../components/ActivityGrid';
@@ -207,7 +206,6 @@ function SemesterTab({ overview, active, onOpen }: { overview: SemesterOverview;
   const today = todayISO(useNow());
   const stats = useMemo(() => gradeStats(subjects), [subjects]);
   const { data: activity } = useLoad(() => api.getSemesterActivity(semester.id), [semester.id]);
-  const last = semesterLastDay(overview);
 
   const editSubject = (s: Subject) => ui.dialog((close) => <SubjectDialog semesterId={semester.id} subject={s} close={close} />);
 
@@ -291,10 +289,6 @@ function SemesterTab({ overview, active, onOpen }: { overview: SemesterOverview;
       </section>
       <section className="info-card sp-card">
         <h2 className="card-title">Activity</h2>
-        <p className="muted small sp-note-top">
-          One square per day from {formatDate(semester.startDate)} to {formatDate(last, { year: true })}: the fuller, the more of that day's lectures and
-          exercise sessions are done. Hover a day to see each subject.
-        </p>
         {activity && <ActivityGrid days={activity} subjects={subjects} today={today} />}
       </section>
     </>

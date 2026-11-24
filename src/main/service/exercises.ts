@@ -71,6 +71,7 @@ export class ExerciseService extends ExamService {
     baseTitle: r.base_title,
     intervalWeeks: r.interval_weeks,
     nextNumber: r.next_number,
+    numbered: !!r.numbered,
   });
 
   protected liveExercise(id: Id): Exercise {
@@ -106,6 +107,11 @@ export class ExerciseService extends ExamService {
 
   protected handedIn(value: unknown): boolean {
     if (typeof value !== 'boolean') throw new UserError('Unknown hand-in state.');
+    return value;
+  }
+
+  protected numbered(value: unknown): boolean {
+    if (typeof value !== 'boolean') throw new UserError('Unknown numbering setting.');
     return value;
   }
 
@@ -187,15 +193,17 @@ export class ExerciseService extends ExamService {
 
       const interval = this.int(input.recurrence.intervalWeeks, 'Repeat interval (weeks)', 1, 52);
       const count = this.int(input.recurrence.count, 'Number of occurrences', 1, 200);
-      const first = this.int(input.recurrence.firstNumber, 'First number', 0, 9999);
+      const numbered = this.numbered(input.recurrence.numbered ?? true);
+      const first = this.int(input.recurrence.firstNumber ?? 1, 'First number', 0, 9999);
       const t = this.stamp();
       const seriesId = Number(
         this.run(
-          'INSERT INTO exercise_series (subject_id, base_title, interval_weeks, next_number, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+          'INSERT INTO exercise_series (subject_id, base_title, interval_weeks, next_number, numbered, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
           input.subjectId,
           title,
           interval,
           first + count,
+          numbered ? 1 : 0,
           t,
           t,
         ).lastInsertRowid,
@@ -207,7 +215,7 @@ export class ExerciseService extends ExamService {
             subjectId: input.subjectId,
             seriesId,
             sequenceNumber: first + i,
-            title: seriesTitle(title, first + i),
+            title: seriesTitle(title, first + i, numbered),
             description,
             // The planned-date pattern repeats in every occurrence.
             plannedDates: planned.map((d) => addDays(d, 7 * interval * i)),
@@ -239,7 +247,7 @@ export class ExerciseService extends ExamService {
             subjectId: series.subjectId,
             seriesId,
             sequenceNumber: num,
-            title: seriesTitle(series.baseTitle, num),
+            title: seriesTitle(series.baseTitle, num, series.numbered),
             description: last.description,
             plannedDates: last.plannedDates.map((d) => addDays(d, shift)),
             deadlineDate: last.deadlineDate && addDays(last.deadlineDate, shift),

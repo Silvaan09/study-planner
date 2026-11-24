@@ -796,8 +796,12 @@ textarea.input {
   color: var(--text-2);
   font-size: 11.5px;
   font-weight: 700;
-  display: grid;
-  place-items: center;
+  /* Centred on the digits themselves: the line is trimmed to their height (a full line box sits them too low). */
+  display: block;
+  align-content: center;
+  text-align: center;
+  white-space: nowrap;
+  text-box: trim-both cap alphabetic;
 }
 .nav-badge.danger {
   background: var(--danger);
@@ -1510,15 +1514,15 @@ textarea.input {
   color: var(--text);
   font-weight: 600;
 }
+/* The subject bar: a layer in the card's own outline shape with only its left edge painted, so the bar's corners
+   follow the outline exactly (a separate rounded bar left a notch where its curve was cut off). */
 .ex-chip.due::before {
   content: '';
   position: absolute;
-  left: -1px;
-  top: -1px;
-  bottom: -1px;
-  width: 4px;
-  border-radius: 7px 0 0 7px;
-  background: var(--c);
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(to right, var(--c) 4px, transparent 4px);
+  pointer-events: none;
 }
 .ex-chip.due.handed-in {
   background: var(--surface-2);
@@ -1542,6 +1546,15 @@ textarea.input {
   border-style: solid;
   border-color: var(--danger);
   box-shadow: 0 0 0 1px var(--danger);
+}
+/* The bar also covers the outer ring (1px outside the card), so no red shows to its left. */
+.ex-chip.due.overdue::before {
+  inset: -2px;
+  border-radius: 8px;
+  background: linear-gradient(to right, var(--c) 5px, transparent 5px);
+}
+[data-theme='obsidian'] .ex-chip.due.overdue::before {
+  border-radius: 5px;
 }
 
 /* Previous, current and next week side by side on a track moved with a transform (see TimetableView). The carousel
@@ -1906,6 +1919,8 @@ textarea.input {
   color: transparent;
   display: grid;
   place-items: center;
+  /* Without this the button's own padding leaves less room than the check is wide, pushing it off-centre. */
+  padding: 0;
   cursor: pointer;
 }
 .check-btn:hover {
@@ -3981,9 +3996,6 @@ div.setting-row {
 }
 .sp-note {
   margin: 10px 0 0;
-}
-.sp-note-top {
-  margin: -6px 0 14px;
 }
 .sp-cards {
   display: grid;

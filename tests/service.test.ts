@@ -155,6 +155,76 @@ describe('exercises', () => {
     expect(more[0]).toMatchObject({ title: 'Homework 05', plannedDates: ['2026-10-13'], deadlineDate: '2026-10-16' });
   });
 
+  describe('series without numbers', () => {
+    function plain() {
+      return svc.createExercise({
+        subjectId: math.id,
+        title: 'Summarize the lecture',
+        description: '',
+        plannedDates: ['2026-09-15'],
+        deadlineDate: null,
+        recurrence: { intervalWeeks: 1, count: 3, numbered: false },
+      });
+    }
+    const titles = (list: { id: number }[]) => list.map((e) => svc.getExercise(e.id).title);
+
+    it('gives every occurrence the same title, also later ones and after a rename', () => {
+      const list = plain();
+      expect(list.map((e) => e.title)).toEqual(Array(3).fill('Summarize the lecture'));
+      expect(list.map((e) => e.plannedDates[0])).toEqual(['2026-09-15', '2026-09-22', '2026-09-29']);
+      expect(svc.getSeries(list[0].seriesId!)).toMatchObject({ numbered: false, baseTitle: 'Summarize the lecture' });
+      expect(svc.extendSeries(list[0].seriesId!, 1)[0]).toMatchObject({ title: 'Summarize the lecture', plannedDates: ['2026-10-06'] });
+      svc.updateExercise({ id: list[1].id, scope: 'future', changes: { title: 'Recap' } });
+      expect(titles(list)).toEqual(['Summarize the lecture', 'Recap', 'Recap']);
+    });
+
+    it('numbers by default', () => {
+      const list = svc.createExercise({
+        subjectId: math.id, title: 'PS', description: '', plannedDates: ['2026-09-15'], deadlineDate: null,
+        recurrence: { intervalWeeks: 1, count: 2 },
+      });
+      expect(list.map((e) => e.title)).toEqual(['PS 01', 'PS 02']);
+      expect(svc.getSeries(list[0].seriesId!).numbered).toBe(true);
+    });
+
+    it('switches numbering on and off for the whole series', () => {
+      const list = plain();
+      expect(svc.updateExercise({ id: list[1].id, scope: 'all', changes: { numbered: true } })).toEqual({ status: 'updated', count: 3 });
+      expect(titles(list)).toEqual(['Summarize the lecture 01', 'Summarize the lecture 02', 'Summarize the lecture 03']);
+      expect(svc.getSeries(list[0].seriesId!).numbered).toBe(true);
+      expect(svc.extendSeries(list[0].seriesId!, 1)[0].title).toBe('Summarize the lecture 04');
+
+      // Off again, together with a new title.
+      svc.updateExercise({ id: list[0].id, scope: 'all', changes: { numbered: false, title: 'Recap' } });
+      expect(titles(list)).toEqual(['Recap', 'Recap', 'Recap']);
+      expect(svc.getSeries(list[0].seriesId!)).toMatchObject({ numbered: false, baseTitle: 'Recap' });
+      // The same setting again changes nothing.
+      expect(svc.updateExercise({ id: list[0].id, scope: 'all', changes: { numbered: false } })).toEqual({ status: 'updated', count: 4 });
+      expect(titles(list)).toEqual(['Recap', 'Recap', 'Recap']);
+    });
+
+    it('asks before retitling an individually renamed occurrence', () => {
+      const list = series();
+      svc.updateExercise({ id: list[2].id, scope: 'this', changes: { title: 'Bonus sheet' } });
+      const res = svc.updateExercise({ id: list[0].id, scope: 'all', changes: { numbered: false } });
+      expect(res).toEqual({ status: 'conflicts', conflicts: [{ id: list[2].id, title: 'Bonus sheet', fields: ['title'] }] });
+      expect(titles(list)).toEqual(['Problem Set 01', 'Problem Set 02', 'Bonus sheet', 'Problem Set 04']);
+      expect(svc.getSeries(list[0].seriesId!).numbered).toBe(true);
+
+      svc.updateExercise({ id: list[0].id, scope: 'all', changes: { numbered: false }, overridePolicy: 'keep' });
+      expect(titles(list)).toEqual(['Problem Set', 'Problem Set', 'Bonus sheet', 'Problem Set']);
+      svc.updateExercise({ id: list[0].id, scope: 'all', changes: { numbered: true }, overridePolicy: 'overwrite' });
+      expect(titles(list)).toEqual(['Problem Set 01', 'Problem Set 02', 'Problem Set 03', 'Problem Set 04']);
+    });
+
+    it('only changes the numbering for the whole series', () => {
+      const list = series();
+      expect(() => svc.updateExercise({ id: list[1].id, scope: 'future', changes: { numbered: false } })).toThrow(/whole series/);
+      expect(() => svc.updateExercise({ id: list[1].id, scope: 'this', changes: { numbered: false } })).toThrow(/whole series/);
+      expect(titles(list)).toEqual(['Problem Set 01', 'Problem Set 02', 'Problem Set 03', 'Problem Set 04']);
+    });
+  });
+
   it('rejects series edits that would break planned <= deadline, changing nothing', () => {
     const list = series();
     svc.updateExercise({ id: list[3].id, scope: 'this', changes: { plannedDates: ['2026-10-09'] } });
@@ -1456,5 +1526,36 @@ describe('schema v10', () => {
     // The database itself refuses impossible values.
     expect(() => v10.db.exec('UPDATE subjects SET grade = 7 WHERE id = 1')).toThrow();
     expect(() => v10.db.exec("UPDATE subjects SET assessment = 'stars' WHERE id = 1")).toThrow();
+  });
+});
+
+describe('schema v11', () => {
+  it('keeps existing series numbered', async () => {
+    close();
+    const { migrations } = await import('../src/main/db/migrations');
+    const dir10 = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-v10-'));
+    const v10 = openDatabase(dir10, { migrations: migrations.slice(0, 10) });
+    const old = new StudyService(v10.db);
+    const s = old.createSemester({ name: 'S', startDate: '2026-09-14', endDate: '2026-12-18' });
+    const m = old.createSubject({ semesterId: s.id, name: 'M', color: '#3366ff' });
+    v10.db.exec(`INSERT INTO exercise_series (id, subject_id, base_title, interval_weeks, next_number, created_at, updated_at)
+        VALUES (7, ${m.id}, 'Problem Set', 1, 3, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+      INSERT INTO exercises (id, subject_id, series_id, sequence_number, title, planned_date, deadline_date, created_at, updated_at) VALUES
+        (1, ${m.id}, 7, 1, 'Problem Set 01', '2026-09-15', '2026-09-18', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'),
+        (2, ${m.id}, 7, 2, 'Problem Set 02', '2026-09-22', '2026-09-25', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+      INSERT INTO exercise_plan_dates (exercise_id, date) VALUES (1, '2026-09-15'), (2, '2026-09-22');`);
+    v10.db.close();
+    const v11 = openDatabase(dir10);
+    close = () => {
+      v11.db.close();
+      fs.rmSync(dir10, { recursive: true, force: true });
+    };
+    expect(v11.schemaVersion).toBe(migrations.length);
+    expect(v11.backupsCreated).toHaveLength(1);
+    const s11 = new StudyService(v11.db);
+    expect(s11.getSeries(7)).toMatchObject({ baseTitle: 'Problem Set', numbered: true, nextNumber: 3 });
+    expect([1, 2].map((id) => s11.getExercise(id).title)).toEqual(['Problem Set 01', 'Problem Set 02']);
+    expect(s11.extendSeries(7, 1)[0]).toMatchObject({ title: 'Problem Set 03', plannedDates: ['2026-09-29'], deadlineDate: '2026-10-02' });
+    expect(() => v11.db.exec('UPDATE exercise_series SET numbered = 2 WHERE id = 7')).toThrow();
   });
 });

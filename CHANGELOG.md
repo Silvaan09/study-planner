@@ -2,6 +2,16 @@
 
 Versions follow [semantic versioning](https://semver.org): **major** for changes you have to act on yourself or that remove features, **minor** for new features and visible UI changes (including automatic database migrations), **patch** for bug fixes and small tweaks.
 
+## 2.3.0 — 2026-11-24
+- **Recurring exercises without numbers.** When you create a recurring exercise, the new **Titles** switch lets you choose between **Numbered** ("Problem Set 01", "Problem Set 02", …) and **Same title**, where every occurrence keeps the title exactly as you typed it. That fits things you do every week that aren't a numbered sheet, like "Summarize this week's lecture". Numbered stays the default.
+- **Change it later.** Edit any exercise of a series with **Whole series** to switch its numbering on or off. Exercises whose title you changed individually are asked about first, as usual. Your existing series stay numbered.
+- **Cleaner overdue deadlines.** The subject's colour bar on an overdue deadline in the timetable now runs right to the edge, with no red showing beside it.
+- **Centred checkmarks and badge.** The checkmark in the check-off circles on the Outstanding and Today pages is centred, and so is the number in the sidebar's Outstanding badge.
+- **Semesters page.** The explanation under "Activity" is gone.
+- Database schema v11 (one new setting per exercise series). Existing data is kept; a backup is made automatically before the upgrade. After updating, older app versions can no longer open the database.
+- Tests: series without numbers (creating, extending, switching, conflicts) and the v11 upgrade.
+- README: mentions series without numbers; the semester activity screenshot is retaken.
+
 ## 2.2.1 — 2026-11-20
 - **Tidier hover texts.** Hovering an exercise, a deadline or a lecture in the timetable no longer repeats its status, and the check-off circle and hand-in flag no longer say "click to change". The semester button in the sidebar no longer shows a tooltip.
 - **Study weeks in the week list** only show how many exercises are done when you hover their dot, since there are no lectures in them.

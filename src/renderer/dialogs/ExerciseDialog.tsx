@@ -18,7 +18,7 @@ import { Modal, useUi } from '../ui';
 import { Plus, Repeat } from '../components/Icons';
 import { DateField } from '../components/DatePicker';
 import { useActions } from '../actions';
-import { Field, Footer, StatusPicker } from './fields';
+import { Field, Footer, NumberingPicker, StatusPicker } from './fields';
 import { ConflictDialog, FIELD_LABEL } from './ConflictDialog';
 import { normalizeDates, PlannedDatesField } from './PlannedDatesField';
 import { ChecklistEditor, cleanSteps, draftSteps, type DraftStep } from './ChecklistEditor';
@@ -67,6 +67,8 @@ export function ExerciseDialog({
   const [count, setCount] = useState(() => defaultCount(initialDeadline, semester.endDate, 1));
   const [countTouched, setCountTouched] = useState(false);
   const [firstNumber, setFirstNumber] = useState(1);
+  // Titles with a number ("Problem Set 01") or the same title on every occurrence. Editing: of the whole series.
+  const [numbered, setNumbered] = useState(true);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -83,11 +85,14 @@ export function ExerciseDialog({
         const s = await api.getSeries(e.seriesId);
         setSeries(s);
         setSeriesTitleText(s.baseTitle);
+        setNumbered(s.numbered);
       }
     });
   }, [exerciseId, isEdit]);
 
   const seriesScope = series !== null && scope !== 'this';
+  // The numbering can only be changed for the whole series; other scopes show the series as it is.
+  const seriesNumbered = series !== null && (scope === 'all' ? numbered : series.numbered);
   const plannedDates = normalizeDates(planned);
   const latestPlanned = plannedDates[plannedDates.length - 1];
   const hasDeadline = isValidISODate(deadline);
@@ -112,12 +117,12 @@ export function ExerciseDialog({
   const preview = useMemo(() => {
     if (!repeat || !plannedValid) return [];
     return Array.from({ length: Math.min(count, 3) }, (_, i) => ({
-      title: `${title || 'Title'} ${String(firstNumber + i).padStart(2, '0')}`,
+      title: numbered ? `${title || 'Title'} ${String(firstNumber + i).padStart(2, '0')}` : title || 'Title',
       planned: plannedDates.map((d) => formatDate(addDays(d, 7 * interval * i), { weekday: true })).join(', '),
       due: hasDeadline ? addDays(deadline, 7 * interval * i) : null,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repeat, planned, deadline, count, title, firstNumber, interval]);
+  }, [repeat, planned, deadline, count, title, firstNumber, numbered, interval]);
 
   const save = async () => {
     if (!isEdit) {
@@ -131,7 +136,7 @@ export function ExerciseDialog({
           status,
           handedIn,
           checklist: cleanSteps(steps),
-          recurrence: repeat ? { intervalWeeks: interval, count, firstNumber } : undefined,
+          recurrence: repeat ? { intervalWeeks: interval, count, firstNumber: numbered ? firstNumber : 1, numbered } : undefined,
         }),
       );
       if (created) {
@@ -144,6 +149,7 @@ export function ExerciseDialog({
     const changes: ExerciseChanges = {};
     if (seriesScope) {
       if (seriesTitleText !== series!.baseTitle) changes.title = seriesTitleText;
+      if (scope === 'all' && numbered !== series!.numbered) changes.numbered = numbered;
     } else if (title !== e.title) changes.title = title;
     if (description !== e.description) changes.description = description;
     if (subjectId !== e.subjectId) changes.subjectId = subjectId as Id;
@@ -244,15 +250,35 @@ export function ExerciseDialog({
           </select>
         </Field>
         {seriesScope ? (
-          <Field label="Series title" hint={`This exercise becomes "${seriesTitleText} ${String(exercise?.sequenceNumber ?? 0).padStart(2, '0')}"`}>
+          <Field
+            label="Series title"
+            hint={
+              seriesNumbered
+                ? `This ${noun} becomes "${seriesTitleText} ${String(exercise?.sequenceNumber ?? 0).padStart(2, '0')}"`
+                : `Every ${noun} of the series gets this title.`
+            }
+          >
             <input className="input" value={seriesTitleText} onChange={(e) => setSeriesTitleText(e.target.value)} />
           </Field>
         ) : (
-          <Field label="Title" hint={repeat ? 'A number is appended: "Problem Set 01", "Problem Set 02", …' : undefined}>
+          <Field
+            label="Title"
+            hint={repeat ? (numbered ? 'A number is appended: "Problem Set 01", "Problem Set 02", …' : 'Every occurrence gets this title.') : undefined}
+          >
             <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={isTask ? 'e.g. Renew passport' : 'e.g. Problem Set'} autoFocus={!isEdit} />
           </Field>
         )}
       </div>
+
+      {series && scope === 'all' && (
+        <div className="field-row">
+          <div className="field">
+            <span className="field-label">Titles</span>
+            <NumberingPicker value={numbered} onChange={setNumbered} />
+          </div>
+          <div className="field" />
+        </div>
+      )}
 
       <div className="field-row">
         <div className="field">
@@ -309,7 +335,7 @@ export function ExerciseDialog({
           </label>
           {repeat && (
             <>
-              <div className="field-row three">
+              <div className="field-row">
                 <Field label="Every … weeks">
                   <input type="number" className="input" min={1} max={52} value={interval} onChange={(e) => setIntervalWeeks(Math.max(1, Math.min(52, +e.target.value || 1)))} />
                 </Field>
@@ -326,13 +352,23 @@ export function ExerciseDialog({
                     }}
                   />
                 </Field>
-                <Field label="First number">
-                  <input type="number" className="input" min={0} max={9999} value={firstNumber} onChange={(e) => setFirstNumber(Math.max(0, +e.target.value || 0))} />
-                </Field>
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <span className="field-label">Titles</span>
+                  <NumberingPicker value={numbered} onChange={setNumbered} />
+                </div>
+                {numbered ? (
+                  <Field label="First number">
+                    <input type="number" className="input" min={0} max={9999} value={firstNumber} onChange={(e) => setFirstNumber(Math.max(0, +e.target.value || 0))} />
+                  </Field>
+                ) : (
+                  <div className="field" />
+                )}
               </div>
               <div className="repeat-preview">
-                {preview.map((p) => (
-                  <span key={p.title}>
+                {preview.map((p, i) => (
+                  <span key={i}>
                     {p.title}{' '}
                     <em>
                       {p.planned ? `planned ${p.planned}` : 'deadline only'}

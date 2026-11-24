@@ -16,7 +16,7 @@ Windows desktop app · works fully offline · your data stays on your PC
 ## Features
 
 - **Your whole week on one screen.** Lectures, the days you've planned to work on each exercise, deadlines and exams, all in one timetable. 
-- **Plan the work, not just the deadline.** Pick the days you'll actually sit down for each exercise and check off every session as you go. Break the big ones into steps. Finishing an exercise and handing it in are separate, so nothing drops off your list before it's submitted. A whole series (`Problem Set 01`, `02`, …) is set up in one go.
+- **Plan the work, not just the deadline.** Pick the days you'll actually sit down for each exercise and check off every session as you go. Break the big ones into steps. Finishing an exercise and handing it in are separate, so nothing drops off your list before it's submitted. A whole series (`Problem Set 01`, `02`, …) is set up in one go, with or without numbers in the titles.
 - **Start every day knowing what matters.** The Today page shows what's on right now, what's next, what to get done today and what's coming up this week, with a streak for every day you finish everything.
 - **Nothing slips through.** Missed lectures and unfinished exercises pile up in one Outstanding list until you deal with them, and every exam counts down.
 - **Built around your actual semester.** Courses that start late or end early, autumn breaks and public holidays: lectures only show up when they really take place. After the semester, the weeks until your last exam are marked as your exam study period.

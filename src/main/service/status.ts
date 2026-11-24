@@ -100,6 +100,7 @@ export function checklistSteps(items: { text: string }[]): string {
   return JSON.stringify(items.map((i) => i.text));
 }
 
-export function seriesTitle(base: string, n: number): string {
-  return `${base} ${String(n).padStart(2, '0')}`;
+/** An occurrence's title: the series title plus its number ("Problem Set 03"), or just the series title when not numbered. */
+export function seriesTitle(base: string, n: number, numbered = true): string {
+  return numbered ? `${base} ${String(n).padStart(2, '0')}` : base;
 }
